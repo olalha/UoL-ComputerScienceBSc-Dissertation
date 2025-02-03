@@ -1,0 +1,21 @@
+# Ignore .env file
+.env
+
+# Ignore user uploaded and generated data
+_data/
+
+# Ignore database file
+*.db
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+
+# Ignore venv
+_venv/
+
+# Ignore vscode files
+.vscode/
+
+# Ignore test files
+_testing/

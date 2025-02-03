@@ -1,0 +1,7 @@
+# SETTINGS FILE
+#
+# This file needs to be configured by the user before running the application.
+
+# OpenRouter settings
+models:
+  Summarize-Primary: 'perplexity/llama-3.1-sonar-large-128k-chat'
