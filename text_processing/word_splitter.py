@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 # TODO: Add these to settings file
 CHUNK_WC_MIN = 20
-CHUNK_WC_MAX = 300
+CHUNK_WC_MAX = 150
 TOTAL_WC = 20000
 
 def _random_partition(N, min_val, max_val, i):
@@ -367,7 +367,7 @@ if __name__ == "__main__":
         
         all_reviews = allocate_chunk_collections_random(chunks=all_chunks, 
                                                         max_chunks_per_collection=10, 
-                                                        max_single_chunk_collection_wc=50, 
+                                                        max_single_chunk_collection_wc=40, 
                                                         prioritize_min_num_of_collections=1,
                                                         invalid_standalone_sentiments_collections=["neu"])
         
