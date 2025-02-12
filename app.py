@@ -15,14 +15,13 @@ env_path = current_dir / '.env'
 load_dotenv(dotenv_path=env_path)
 
 # Check if environment variables are set
-required_env_vars = ['OPENROUTER_API_KEY', 'DATABASE_URL']
+required_env_vars = ['OPENAI_API_KEY']
 missing_vars = [var for var in required_env_vars if not os.getenv(var)]
 
 if missing_vars:
     raise ValueError(f"Error: Missing required environment variables: {', '.join(missing_vars)}")
 
 import streamlit as st
-
 from utils.database import db_setup
 
 # Initialize session state variables

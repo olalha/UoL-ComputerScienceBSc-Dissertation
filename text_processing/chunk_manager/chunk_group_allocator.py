@@ -2,37 +2,51 @@ import random
 import math
 import time
 import copy
+from typing import Optional
 
-# ============================
-# Input Validation Functions
-# ============================
+import matplotlib.pyplot as plt
+
+""" Input Validation Functions """
 
 def validate_chunks(chunks):
+    """
+    Validate the input chunks list.
+    
+    Each chunk must be a dictionary with keys 'topic', 'sentiment', and 'wc'. 
+    """
     if not isinstance(chunks, list):
-        print("allocate_chunks: Chunks must be a list.")
+        print("validate_chunks: Chunks must be a list.")
         return False
     for chunk in chunks:
         if not isinstance(chunk, dict):
-            print("allocate_chunks: Each chunk must be a dict.")
+            print("validate_chunks: Each chunk must be a dict.")
             return False
         for key in ['topic', 'sentiment', 'wc']:
             if key not in chunk:
-                print(f"allocate_chunks: Each chunk must have key '{key}'.")
+                print(f"validate_chunks: Each chunk must have key '{key}'.")
                 return False
         if not isinstance(chunk['topic'], str):
-            print("allocate_chunks: Chunk 'topic' must be a string.")
+            print("validate_chunks: Chunk 'topic' must be a string.")
             return False
         if not (isinstance(chunk['sentiment'], str) and len(chunk['sentiment']) == 3):
-            print("allocate_chunks: Chunk 'sentiment' must be a three-letter string.")
+            print("validate_chunks: Chunk 'sentiment' must be a three-letter string.")
             return False
         if not isinstance(chunk['wc'], int):
-            print("allocate_chunks: Chunk 'wc' must be an integer.")
+            print("validate_chunks: Chunk 'wc' must be an integer.")
             return False
     return True
 
 def validate_buckets(buckets):
+    """
+    Validate the input buckets list.
+    
+    Each bucket must be a dictionary with keys 'range' and 'target_fraction'.
+    The 'range' key must contain a tuple of two integers.
+    The 'target_fraction' key must contain a numeric value.
+    Ranges must not overlap or have gaps between them.
+    """
     if not isinstance(buckets, list):
-        print("allocate_chunks: Buckets must be a list.")
+        print("validate_buckets: Buckets must be a list.")
         return False
     
     total_fraction = 0.0
@@ -42,24 +56,24 @@ def validate_buckets(buckets):
     
     for bucket in buckets:
         if not isinstance(bucket, dict):
-            print("allocate_chunks: Each bucket must be a dict.")
+            print("validate_buckets: Each bucket must be a dict.")
             return False
         for key in ['range', 'target_fraction']:
             if key not in bucket:
-                print(f"allocate_chunks: Each bucket must have '{key}'.")
+                print(f"validate_buckets: Each bucket must have '{key}'.")
                 return False
         if not (isinstance(bucket['range'], tuple) and len(bucket['range']) == 2):
-            print("allocate_chunks: Bucket 'range' must be a tuple of two ints.")
+            print("validate_buckets: Bucket 'range' must be a tuple of two ints.")
             return False
         low, high = bucket['range']
         if not (isinstance(low, int) and isinstance(high, int)):
-            print("allocate_chunks: Bucket range values must be integers.")
+            print("validate_buckets: Bucket range values must be integers.")
             return False
         if low >= high:
-            print("allocate_chunks: Bucket range low must be less than high.")
+            print("validate_buckets: Bucket range low must be less than high.")
             return False
         if not isinstance(bucket['target_fraction'], (int, float)):
-            print("allocate_chunks: Bucket 'target_fraction' must be numeric.")
+            print("validate_buckets: Bucket 'target_fraction' must be numeric.")
             return False
             
         # Track min and max values
@@ -72,31 +86,31 @@ def validate_buckets(buckets):
     ranges.sort()
     for i in range(len(ranges) - 1):
         if ranges[i][1] >= ranges[i + 1][0]:
-            print("allocate_chunks: Bucket ranges must not overlap.")
+            print("validate_buckets: Bucket ranges must not overlap.")
             return False
     
     # Check for gaps in ranges
     for i in range(len(ranges) - 1):
         if ranges[i][1] + 1 < ranges[i + 1][0]:
-            print("allocate_chunks: Bucket ranges must not have gaps.")
+            print("validate_buckets: Bucket ranges must not have gaps.")
             return False
     
     if abs(total_fraction - 1.0) > 1e-6:
-        print("allocate_chunks: Sum of target fractions must equal 1.")
+        print("validate_buckets: Sum of target fractions must equal 1.")
         return False
         
     return True
 
-# =========================================
-# Functions for Bucket Assignment & Metrics
-# =========================================
+""" Collection Manupulation Functions """
 
 def compute_total_wc(collection):
     return sum(chunk['wc'] for chunk in collection)
 
 def get_bucket_index(collection, buckets):
-    """Return the index of the bucket into which this collection falls,
-    based on its total word count. Returns None if no bucket matches."""
+    """
+    Return the index of the bucket into which this collection falls,
+    based on its total word count (None if no bucket matches).
+    """
     total_wc = compute_total_wc(collection)
     for i, bucket in enumerate(buckets):
         low, high = bucket['range']
@@ -104,12 +118,10 @@ def get_bucket_index(collection, buckets):
             return i
     return None
 
-# =========================================
-# State Initialization and Hard Constraint Check
-# =========================================
-
 def valid_collection(collection):
-    """A collection is valid if it does not contain duplicate topics."""
+    """
+    A collection is valid if it does not contain duplicate topics.
+    """
     topics = [chunk['topic'] for chunk in collection]
     return len(topics) == len(set(topics))
 
@@ -124,9 +136,7 @@ def initial_solution(chunks, buckets):
         state.append({'chunks': collection, 'bucket': get_bucket_index(collection, buckets)})
     return state
 
-# =========================================
-# Heuristic / Penalty Calculation
-# =========================================
+""" Heuristic / Penalty Functions """
 
 def compute_cost(state, buckets):
     """
@@ -157,9 +167,7 @@ def update_bucket_for_collection(collection_obj, buckets):
     collection_obj['bucket'] = new_bucket
     return old_bucket, new_bucket
 
-# =========================================
-# Neighborhood Moves for Simulated Annealing
-# =========================================
+""" Functions For Simulated Annealing """
 
 def propose_neighbor(state, buckets):
     """
@@ -168,6 +176,7 @@ def propose_neighbor(state, buckets):
       - swap: Swap a chunk between two collections.
       - merge: Merge two collections (if valid).
       - split: Split one collection into two.
+      
     The move is only accepted if it maintains the hard constraint.
     Returns a new state (deep copy) if a move was made, or None if no move was possible.
     """
@@ -268,19 +277,26 @@ def propose_neighbor(state, buckets):
 
     return new_state if move_made else None
 
-# =========================================
-# Simulated Annealing Search
-# =========================================
-
 def simulated_annealing(initial_state, buckets, time_limit=10, max_iter=10000):
+    """
+    Perform simulated annealing to find an optimal allocation of chunks to collections.
+    
+    The algorithm will run for a specified time limit or maximum number of iterations.
+    Returns the best state found during the search.
+    """
+    
     start_time = time.time()
     current_state = initial_state
     best_state = copy.deepcopy(initial_state)
     current_cost = compute_cost(current_state, buckets)
     best_cost = current_cost
+    
+    # High cooling rate to quickly explore the solution space.
     T = 1.0
-    cooling_rate = 0.999  # Adjust as needed
-
+    cooling_rate = 0.999
+    
+    # Main search loop
+    print(f"simulated_annealing: Starting search for {time_limit} seconds or {max_iter} iterations.")
     iteration = 0
     while (time.time() - start_time < time_limit) and (iteration < max_iter):
         iteration += 1
@@ -300,20 +316,30 @@ def simulated_annealing(initial_state, buckets, time_limit=10, max_iter=10000):
 
     # Check if time limit or iteration limit was reached.
     if time.time() - start_time >= time_limit or iteration >= max_iter:
-        print("allocate_chunks: Search time limit has been hit - Returning best found solution.")
+        print("simulated_annealing: Search time limit has been hit - Returning best found solution.")
     return best_state
 
-# =========================================
-# Main Function
-# =========================================
+""" Main Function """
 
-def allocate_chunks(chunks, buckets, time_limit=10, max_iter=10000):
+def allocate_chunks(chunks: list[dict], 
+                    buckets: list[dict], 
+                    time_limit: float = 10, 
+                    max_iter: int = 10000) -> Optional[list[dict]]:
     """
     Allocate the list of chunks into collections such that:
       - No collection contains duplicate topics (hard constraint)
       - The overall distribution (by total word count per collection) approximates
         the target fractions provided in the buckets (soft constraint, with penalty).
     If no valid solution is found, print an error and return None.
+
+    Args:
+        chunks (list[dict]): List of dictionaries representing chunks, each with keys 'topic', 'sentiment', 'wc'
+        buckets (list[dict]): List of dictionaries representing buckets, each with keys 'range', 'target_fraction'
+        time_limit (float): Maximum time to run in seconds
+        max_iter (int): Maximum number of iterations
+        
+    Returns:
+        List of dictionaries representing collections of chunks, or None if no valid solution found
     """
     # Validate inputs.
     if not validate_chunks(chunks):
@@ -321,12 +347,12 @@ def allocate_chunks(chunks, buckets, time_limit=10, max_iter=10000):
     if not validate_buckets(buckets):
         return None
 
-    # Generate an initial solution (each chunk in its own collection).
+    # Generate an initial solution.
     state = initial_solution(chunks, buckets)
     # Verify the hard constraint.
     for coll in state:
         if not valid_collection(coll['chunks']):
-            print("allocate_chunks: No solution has been found")
+            print("allocate_chunks: Initial solution violates hard constraint")
             return None
 
     # Use simulated annealing to search for an optimal allocation.
@@ -340,10 +366,48 @@ def allocate_chunks(chunks, buckets, time_limit=10, max_iter=10000):
 
     return best_state
 
-# =========================================
-# Example Usage
-# =========================================
+""" Visualization Functions """
 
+def visualize_chunk_allocation(state):
+    """
+    Visualize chunk allocation as a stacked bar chart.
+
+    Collections are sorted by total word count, and each collection's chunks 
+    are ordered by sentiment ('neg', 'neu', 'pos'). The chart displays vertical 
+    stacked bars for each collection.
+
+    Args:
+        state (List[dict]): A list of collections, 
+            where each collection is a dict with a 'chunks' key containing a list of 
+            chunk dicts. Each chunk must have 'wc' (int) and 'sentiment' (str).
+    """
+    sentiment_colors = {'neg': '#ff9999', 'neu': '#ffff99', 'pos': '#99ccff'}
+
+    # Sort collections by total word count and chunks by sentiment.
+    all_collections = [c['chunks'] for c in state]
+    all_collections = sorted(all_collections, key=lambda col: sum(chunk['wc'] for chunk in col))
+    sentiment_order = {'neg': 0, 'neu': 1, 'pos': 2}
+
+    # Sort chunks by sentiment within each collection.
+    for collection in all_collections:
+        collection.sort(key=lambda chunk: sentiment_order.get(chunk['sentiment'], 99))
+
+    # Plot the stacked bar chart.
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bar_width = 0.8
+    for i, collection in enumerate(all_collections):
+        bottom = 0
+        for chunk in collection:
+            wc, s = chunk['wc'], chunk['sentiment']
+            ax.bar(i, wc, bottom=bottom, width=bar_width,
+                   color=sentiment_colors.get(s, 'gray'), edgecolor='none')
+            ax.hlines([bottom, bottom + wc], i - bar_width/2, i + bar_width/2, colors='black', linewidth=1)
+            bottom += wc
+    ax.set(xlabel='Collection', ylabel='Word Count', title='Stacked Bar Chart of Collections by Sentiment')
+    plt.tight_layout()
+    plt.show()
+
+""" Example Usage """
 
 if __name__ == "__main__":
     chunks = [

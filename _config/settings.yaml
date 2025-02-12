@@ -1,7 +1,13 @@
 # SETTINGS FILE
-#
-# This file needs to be configured by the user before running the application.
 
-# OpenRouter settings
-models:
-  Summarize-Primary: 'perplexity/llama-3.1-sonar-large-128k-chat'
+# Database settings
+DATABASE_URL: 'sqlite:///database.db'
+
+# Model settings
+MODELS:
+  GENERATE-PRIMARY: 'perplexity/llama-3.1-sonar-large-128k-chat'
+
+# Chunk word count settings
+CHUNK_WC_MIN: 20
+CHUNK_WC_MAX: 50
+TOTAL_WC: 10000

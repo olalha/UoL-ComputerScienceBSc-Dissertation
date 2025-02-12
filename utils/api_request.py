@@ -1,86 +1,114 @@
 """
-This module provides functions for making API requests to OpenRouter's LLM service.
+This module provides functions for making API requests to OpenAI's LLM service.
 It includes utilities for sending requests and handling responses.
 """
 
 import asyncio
 import aiohttp
 import os
-from typing import List, Dict, Union
+from typing import List, Dict
 
-async def _send_openrouter_request(model: str, messages: List[Dict]) -> Dict:
+async def _send_openai_request(json_content: dict) -> Dict:
     """
-    Send an asynchronous request to OpenRouter API and return the JSON response.
-    """
-    api_key = os.getenv('OPENROUTER_API_KEY')
+    Send an asynchronous request to the OpenAI API.
     
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            url="https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={"model": model, "messages": messages}
-        ) as response:
-            return await response.json()
-
-async def prompt_llm_async(model: str, messages: List[List[Dict]]) -> List[Dict]:
+    Args:
+        json_content (dict): The request payload to send to the API.
+    
+    Returns:
+        Dict: The JSON response from the API.
     """
-    Send prompts to the specified LLM model via OpenRouter API in parallel.
+    # Get the API key from the environment
+    api_key = os.getenv('OPENAI_API_KEY')
+    
+    # Set the request URL and headers
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    # Send the request
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(url, headers=headers, json=json_content) as response:
+                # Check if the request was successful
+                if response.status != 200:
+                    print(f"send_openai_request: API request failed with status code {response.status}")
+                    return None
+                return await response.json()
+        # Handle client errors
+        except aiohttp.ClientError as e:
+            print(f"send_openai_request: Client error occurred: {e}")
+            return None
+
+def _validate_response_choices(response: Dict, messages: List[Dict]) -> Dict:
+    """
+    Checks if an API response indicates a failed request.
+    
+    Args:
+        response (Dict): The API response to validate.
+        messages (List[Dict]): The original message list that generated this response.
+    
+    Returns:
+        Dict: A dictionary containing a success flag, original messages, and response data.
+    """
+    # Check if the response is empty
+    if not response:
+        print(f"tag_failed_request: Empty API response: \n{messages}")
+        return {'success': False, 'messages': messages, 'response': {}}
+    
+    # Check if the response did not succeed
+    if 'error' in response:
+        error_message = response.get('error', {}).get('message', 'Unknown error occurred')
+        print(f"tag_failed_request: API request failed: \n{messages} \n\n{error_message}")
+        return {'success': False, 'messages': messages, 'response': response}
+    
+    # Check if the response contains choices
+    if 'choices' not in response or not response['choices']:
+        print(f"tag_failed_request: 'choices' not found or empty in api response: \n{messages}")
+        return {'success': False, 'messages': messages, 'response': response}
+    
+    return {'success': True, 'messages': messages, 'response': response}
+
+def prompt_llm_parallel(model: str, messages: List[List[Dict]]) -> List[Dict]:
+    """
+    Send prompts to the specified LLM model via OpenAI API in parallel.
     
     Args:
         model (str): The name of the LLM model to use.
         messages (List[List[Dict]]): A list of message lists, each representing a separate request.
     
     Returns:
-        List[Dict]: A list of processed API responses.
-    
-    Raises:
-        ValueError: If there are issues with the API response.
+       List[Dict]: A list of processed API responses. Each is a dictionary containing a success flag,
+            the original message list, and the response dictionary.
     """
-    async def process_request(msg):
-        try:
-            response = await _send_openrouter_request(model, msg)
-            
-            if 'error' in response:
-                error_message = response.get('error', {}).get('message', 'Unknown error occurred')
-                raise ValueError(f"Error: OpenRouter API request failed: \n{msg} \n\n{error_message}")
-            if 'choices' not in response or not response['choices']:
-                raise ValueError(f"Error: 'choices' not found or empty in api response: \n{msg}")
-            
-            return response
+    # Asynchronous wrapper function
+    async def async_wrapper():
         
-        except Exception as e:
-            print(f"{str(e)}")
-            return None
+        # Asynchronous request processing function
+        async def process_request(msg):
+            response = await _send_openai_request({"model": model, "messages": msg})
+            return _validate_response_choices(response, msg)
+        
+        # Asynchronously process all requests
+        tasks = [process_request(msg) for msg in messages]
+        return await asyncio.gather(*tasks)
+    
+    return asyncio.run(async_wrapper())
 
-    tasks = [process_request(msg) for msg in messages]
-    return await asyncio.gather(*tasks)
-
-def prompt_llm(model: str, messages: Union[List[Dict], List[List[Dict]]]) -> List[Dict]:
+def prompt_llm_single(model: str, messages: List[Dict]) -> Dict:
     """
-    Send prompts to the specified LLM model via OpenRouter API.
-    Handles requests in parallel if multiple messages are provided.
+    Send a prompt to the specified LLM model via OpenAI API.
     
     Args:
         model (str): The name of the LLM model to use.
-        messages (Union[List[Dict], List[List[Dict]]]): Either a single list of message dictionaries
-                   for one prompt, or a list of message lists for multiple prompts.
+        messages (List[Dict]): A list of message dictionaries for one prompt.
     
     Returns:
-        List[Dict]: A list of processed API responses.
-    
-    Raises:
-        ValueError: If the messages parameter is not in the correct format.
+        Dict: A processed API response containing a success flag,
+              the original message list, and the response dictionary.
     """
-
-    # If messages is a single request, wrap it in another list
-    if messages and isinstance(messages, list) and isinstance(messages[0], dict):
-        messages = [messages]
-    
-    # Validate input
-    if not isinstance(messages, list) or not all(isinstance(m, list) for m in messages):
-        raise ValueError("Error: Each item in messages for prompt_llm must be a list.")
-    if not all(all(isinstance(d, dict) for d in m) for m in messages):
-        raise ValueError("Error: Each message may only contain dictionaries for prompt_llm.")
-
-    # Run the async function and return the result
-    return asyncio.run(prompt_llm_async(model, messages))
+    # Send the request and validate the response
+    response = asyncio.run(_send_openai_request({"model": model, "messages": messages}))
+    return _validate_response_choices(response, messages)

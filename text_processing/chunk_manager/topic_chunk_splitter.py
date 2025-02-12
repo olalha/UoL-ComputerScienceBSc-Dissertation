@@ -127,6 +127,7 @@ def plot_chunks(chunks: List[int], N: int, min_wc: int, max_wc: int) -> None:
     plt.show()
 
 """ Example Usage """
+
 if __name__ == "__main__":
     
     N = 10000
@@ -136,3 +137,5 @@ if __name__ == "__main__":
     chunks = get_chunks(N, min_wc, max_wc, chunk_count_pref=0.5, dirichlet_a=100.0)
     if chunks is not None:
         plot_chunks(chunks, N, min_wc, max_wc)
+    else:
+        print("No valid partition found.")
