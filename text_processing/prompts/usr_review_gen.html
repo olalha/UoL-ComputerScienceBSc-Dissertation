@@ -1,0 +1,13 @@
+# Generate a realistic and engaging {{review_item}} review that follows these exact content specifications below.
+- The total length of the review should be as close to {{total_word_count}} words as possible.
+- The review should be structured in a way that makes it engaging and authentic.
+- IMPORTANT: The final output should be the review itself, and absolutely nothing else.
+- Do not include any additional information, comments, re-iteration of the task, or any other text in your response.
+
+# Contents of the Review
+{% for item in items %}
+- {{ item.word_count }} words on the topic "{{ item.topic }}" with a {{ item.sentiment }} sentiment.
+{% endfor %}
+- You have {{ padding_word_count }} words to use as padding to make the review more engaging and authentic. 
+- Use this to add an introduction, conclusion, or any other connecting sentences to enhance the review.
+- IMPORTANT: Do not use the padding word count to discuss the items directly!

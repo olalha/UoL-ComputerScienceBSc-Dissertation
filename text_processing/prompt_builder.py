@@ -4,13 +4,14 @@ It sets up a Jinja2 environment and offers a function to render templates with g
 """
 
 from importlib import resources
+from typing import Optional
 from jinja2 import Environment, FileSystemLoader, TemplateError
 
 # Set up Jinja2 environment
 with resources.path('text_processing', 'prompts') as prompts_path:
     env = Environment(loader=FileSystemLoader(prompts_path))
 
-def render_prompt(template_name: str, context: dict = None) -> str:
+def render_prompt(template_name: str, context: dict = None) -> Optional[str]:
     """
     Render a prompt template with the given context.
 
@@ -31,4 +32,5 @@ def render_prompt(template_name: str, context: dict = None) -> str:
     
     except TemplateError:
         # Raise a RuntimeError if there's an issue with template rendering
-        raise RuntimeError(f"Error: Issue rendering template: '{template_name}'")
+        print(f"render_prompt: Issue rendering template: '{template_name}'")
+        return None

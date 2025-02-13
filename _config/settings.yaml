@@ -5,7 +5,8 @@ DATABASE_URL: 'sqlite:///database.db'
 
 # Model settings
 MODELS:
-  GENERATE-PRIMARY: 'perplexity/llama-3.1-sonar-large-128k-chat'
+  GENERATE: 'gpt-4o'
+  GENERATE-MINI: 'gpt-4o-mini'
 
 # Chunk word count settings
 CHUNK_WC_MIN: 20

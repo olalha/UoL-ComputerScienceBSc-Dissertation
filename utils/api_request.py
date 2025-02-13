@@ -81,18 +81,20 @@ def prompt_llm_parallel(model: str, messages: List[List[Dict]]) -> List[Dict]:
     
     Returns:
        List[Dict]: A list of processed API responses. Each is a dictionary containing a success flag,
-            the original message list, and the response dictionary.
+            the original message list, an index and the response dictionary.
     """
     # Asynchronous wrapper function
     async def async_wrapper():
         
         # Asynchronous request processing function
-        async def process_request(msg):
+        async def process_request(msg, idx):
             response = await _send_openai_request({"model": model, "messages": msg})
-            return _validate_response_choices(response, msg)
+            result = _validate_response_choices(response, msg)
+            result["prompt_idx"] = idx
+            return result
         
         # Asynchronously process all requests
-        tasks = [process_request(msg) for msg in messages]
+        tasks = [process_request(msg, idx) for idx, msg in enumerate(messages)]
         return await asyncio.gather(*tasks)
     
     return asyncio.run(async_wrapper())
