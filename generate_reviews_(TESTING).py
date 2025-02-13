@@ -25,6 +25,8 @@ if __name__ == "__main__":
     
     """ Review content generation """
     
+    print("Parsing rulebook...")
+    
     TOTAL_WC = get_setting("TOTAL_WC")
     CHUNK_WC_MIN = get_setting("CHUNK_WC_MIN")
     CHUNK_WC_MAX = get_setting("CHUNK_WC_MAX")
@@ -35,6 +37,8 @@ if __name__ == "__main__":
     if not rulebook:
         raise ValueError(f"Error: Parsing rulebook {RULEBOOK_NAME} failed.")
     review_item = rulebook['review_item']
+    
+    print("Generating topic-sentiment chunks...")
     
     # Generate chunks
     all_chunks = []
@@ -57,7 +61,9 @@ if __name__ == "__main__":
             
             # Add chunks to all_chunks if partitioning succeeded
             all_chunks.extend([{'topic': topic_name, 'sentiment': sentiment, 'wc': i} for i in chunks])
-        
+            
+    print("Creating individual reviews...")
+    
     # Define bucket ranges and target fractions
     BUCKETS = [
         {'range': (20, 50), 'target_fraction': 0.33},
@@ -71,6 +77,8 @@ if __name__ == "__main__":
         raise ValueError("Error: Failed to allocate chunks to collections.")
 
     """ Review text generation """
+    
+    print("Generating text for selected test reviews...")
     
     # Select test reviews
     selected_reviews = []
