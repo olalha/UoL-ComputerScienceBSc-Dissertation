@@ -5,9 +5,9 @@ DATABASE_URL: 'sqlite:///database.db'
 
 # Model settings
 MODELS:
-  GENERATE: 'gpt-4o'
-  GENERATE-MINI: 'gpt-4o-mini'
-
+  GPT4o: 'gpt-4o'
+  GPT4o-mini: 'gpt-4o-mini'
+  
 # Chunk word count settings
 CHUNK_WC_MIN: 20
 CHUNK_WC_MAX: 50

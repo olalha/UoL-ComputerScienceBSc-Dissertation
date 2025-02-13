@@ -28,8 +28,8 @@ def validate_chunks(chunks):
         if not isinstance(chunk['topic'], str):
             print("validate_chunks: Chunk 'topic' must be a string.")
             return False
-        if not (isinstance(chunk['sentiment'], str) and len(chunk['sentiment']) == 3):
-            print("validate_chunks: Chunk 'sentiment' must be a three-letter string.")
+        if not isinstance(chunk['sentiment'], str):
+            print("validate_chunks: Chunk 'sentiment' must be a string.")
             return False
         if not isinstance(chunk['wc'], int):
             print("validate_chunks: Chunk 'wc' must be an integer.")
@@ -373,7 +373,7 @@ def visualize_chunk_allocation(state):
     Visualize chunk allocation as a stacked bar chart.
 
     Collections are sorted by total word count, and each collection's chunks 
-    are ordered by sentiment ('neg', 'neu', 'pos'). The chart displays vertical 
+    are ordered by sentiment ('negative', 'netrual', 'positive'). The chart displays vertical 
     stacked bars for each collection.
 
     Args:
@@ -381,12 +381,12 @@ def visualize_chunk_allocation(state):
             where each collection is a dict with a 'chunks' key containing a list of 
             chunk dicts. Each chunk must have 'wc' (int) and 'sentiment' (str).
     """
-    sentiment_colors = {'neg': '#ff9999', 'neu': '#ffff99', 'pos': '#99ccff'}
+    sentiment_colors = {'negative': '#ff9999', 'netrual': '#ffff99', 'positive': '#99ccff'}
 
     # Sort collections by total word count and chunks by sentiment.
     all_collections = [c['chunks'] for c in state]
     all_collections = sorted(all_collections, key=lambda col: sum(chunk['wc'] for chunk in col))
-    sentiment_order = {'neg': 0, 'neu': 1, 'pos': 2}
+    sentiment_order = {'negative': 0, 'netrual': 1, 'positive': 2}
 
     # Sort chunks by sentiment within each collection.
     for collection in all_collections:
@@ -411,12 +411,12 @@ def visualize_chunk_allocation(state):
 
 if __name__ == "__main__":
     chunks = [
-        {'topic': 'A', 'sentiment': 'pos', 'wc': 60},
-        {'topic': 'B', 'sentiment': 'neu', 'wc': 40},
-        {'topic': 'C', 'sentiment': 'neg', 'wc': 120},
-        {'topic': 'D', 'sentiment': 'pos', 'wc': 80},
-        {'topic': 'E', 'sentiment': 'neu', 'wc': 220},
-        {'topic': 'F', 'sentiment': 'neg', 'wc': 210},
+        {'topic': 'A', 'sentiment': 'positive', 'wc': 60},
+        {'topic': 'B', 'sentiment': 'netrual', 'wc': 40},
+        {'topic': 'C', 'sentiment': 'negative', 'wc': 120},
+        {'topic': 'D', 'sentiment': 'positive', 'wc': 80},
+        {'topic': 'E', 'sentiment': 'netrual', 'wc': 220},
+        {'topic': 'F', 'sentiment': 'negative', 'wc': 210},
         # ... add more chunks as needed
     ]
     

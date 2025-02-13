@@ -12,25 +12,38 @@ from text_processing.chunk_manager.chunk_group_allocator import allocate_chunks,
 
 if __name__ == "__main__":
     
+    """ Environment setup """
+    # Get absolute path to .env file
+    current_dir = Path(__file__).resolve().parent
+    env_path = current_dir / '.env'
+
+    # Load environment variables
+    required_env_vars = ['OPENAI_API_KEY']
+    missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+    if missing_vars:
+        raise ValueError(f"Error: Missing required environment variables: {', '.join(missing_vars)}")
+    
     """ Review content generation """
     
     TOTAL_WC = get_setting("TOTAL_WC")
     CHUNK_WC_MIN = get_setting("CHUNK_WC_MIN")
     CHUNK_WC_MAX = get_setting("CHUNK_WC_MAX")
-    
     RULEBOOK_NAME = "TEMPLATE.xlsx"
     
-    topic_distribution_percentage = parse_topic_sentiment_distribution_Excel(RULEBOOK_NAME)
-    if not topic_distribution_percentage:
+    # Parse rulebook
+    rulebook = parse_topic_sentiment_distribution_Excel(RULEBOOK_NAME)
+    if not rulebook:
         raise ValueError(f"Error: Parsing rulebook {RULEBOOK_NAME} failed.")
+    review_item = rulebook['review_item']
     
+    # Generate chunks
     all_chunks = []
-    for topic_name, topic_values in topic_distribution_percentage.items():
+    for topic_name, topic_values in rulebook['content'].items():
         # Get topic word count
         topic_wc = int(TOTAL_WC * topic_values[0])
         
         # Get sentiment word count
-        for index, sentiment in enumerate(["pos", "neu", "neg"]):
+        for index, sentiment in enumerate(["positive", "neutral", "negative"]):
             topic_sentiment_wc = int(topic_wc * topic_values[1][index])
             
             # Skip if no word count
@@ -64,60 +77,55 @@ if __name__ == "__main__":
     reviews_per_bucket = 1
     bucket_counts = [0] * len(BUCKETS)
     for i in solution:
-        if 0 <= i['bucket'] < len(BUCKETS) and bucket_counts[i['bucket']] < reviews_per_bucket:
-            bucket_counts[i['bucket']] += 1
-            selected_reviews.append(i['chunks'])
-            
-    # Get absolute path to .env file
-    current_dir = Path(__file__).resolve().parent
-    env_path = current_dir / '.env'
-
-    # Load environment variables
-    required_env_vars = ['OPENAI_API_KEY']
-    missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-    if missing_vars:
-        raise ValueError(f"Error: Missing required environment variables: {', '.join(missing_vars)}")
+        if i['bucket'] is not None and 0 <= i['bucket'] < len(BUCKETS): 
+            if bucket_counts[i['bucket']] < reviews_per_bucket:
+                bucket_counts[i['bucket']] += 1
+                selected_reviews.append(i['chunks'])
+                
+    # Get model string
+    model = get_setting('MODELS','GPT4o')
     
-    # Render system prompt
-    review_item = "Hotel"
-    review_gen_sys_prompt = render_prompt(template_name="sys_review_gen.html", context={'review_item': review_item})
-    
-    # Render individual review prompts
-    messages = []
+    # Render individual chunk prompts
+    selected_reviews_text_snippets = []
     for review in selected_reviews:
-        all_chunks_word_count = sum([i['wc'] for i in review])
-        padding_word_count = round(max(10, 0.2 * all_chunks_word_count))
-        total_review_word_count = all_chunks_word_count + padding_word_count
-        context = { 
-            'review_item': review_item,
-            'total_word_count': total_review_word_count,
-            'items': review,
-            'padding_word_count': padding_word_count,
-        }
-        review_gen_usr_prompt = render_prompt(template_name="usr_review_gen.html", context=context)
-        messages.append([
-            {"role": "user", "content": review_gen_usr_prompt},
-            {"role": "system", "content": review_gen_sys_prompt},
-        ])
-    
-    # Generate reviews
-    model = get_setting('MODELS','GENERATE-MINI')
-    responses = prompt_llm_parallel(model=model, messages=messages)
-    
-    # Print responses
-    for r in responses:
-        if r['success']:
-            print("Defined Chunks:")
-            review = selected_reviews[r['prompt_idx']]
-            for chunk in review:
-                print(f"- {chunk['topic']} {chunk['sentiment']} {chunk['wc']}")
-            chunks_total_wc = sum([i['wc'] for i in review])
-            padding_word_count = round(max(10, 0.2 * chunks_total_wc))
-            print(f"Expected Word Count: {chunks_total_wc + padding_word_count}\n")
-            generated_review = r['response']['choices'][0]['message']['content']
-            print(f"Generated Review ({len(generated_review.split())} words):")
-            print(generated_review)
-            print("\n---\n")
-        else:
-            print(f"Failed to generate review for prompt: {r['prompt_idx']}")
-    
+        
+        # Get messages for each chunk
+        chunk_messages = []
+        for chunk_dict in review:
+            prompt_context = {
+                'review_item': review_item,
+                'topic': chunk_dict['topic'],
+                'sentiment': chunk_dict['sentiment'],
+                'word_count': chunk_dict['wc']
+            }
+            prompt = render_prompt("usr_chunk_gen.html", prompt_context)
+            messages = [{'role': 'user', 'content': prompt}]
+            chunk_messages.append({'chunk_dict': chunk_dict, 'messages': messages})
+        
+        # Generate text for each chunk
+        messages = [i['messages'] for i in chunk_messages]
+        responses = prompt_llm_parallel(model=model, messages=messages)
+        
+        # Extract generated text
+        review_text_snippets = []
+        for r in responses:
+            chunk_dict = chunk_messages[r['idx']]['chunk_dict']
+            chunk_text = f"{chunk_dict['topic']} - {chunk_dict['sentiment']} - {chunk_dict['wc']} - \n"
+            if r['success']:
+                chunk_text += r['response']['choices'][0]['message']['content']
+            else:
+                chunk_text += "NOT GENERATED"
+                print(f"Failed to generate chunk: {chunk_dict}")
+            review_text_snippets.append(chunk_text)
+        selected_reviews_text_snippets.append(review_text_snippets)
+        
+    """
+    At this point we have a list of reviews, each containing a list of text snippets.
+    The text snippets need be combined to form the full review text with the prompt usr_review_gen.html.
+    """
+        
+    # Print generated text
+    for idx, review_text_snippets in enumerate(selected_reviews_text_snippets):
+        print(f"\nReview {idx+1}:")
+        for snippet in review_text_snippets:
+            print(f"\n{snippet}")

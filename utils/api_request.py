@@ -55,18 +55,17 @@ def _validate_response_choices(response: Dict, messages: List[Dict]) -> Dict:
     """
     # Check if the response is empty
     if not response:
-        print(f"tag_failed_request: Empty API response: \n{messages}")
         return {'success': False, 'messages': messages, 'response': {}}
     
     # Check if the response did not succeed
     if 'error' in response:
         error_message = response.get('error', {}).get('message', 'Unknown error occurred')
-        print(f"tag_failed_request: API request failed: \n{messages} \n\n{error_message}")
+        print(f"validate_response_choices: API request failed: \n{messages} \n\n{error_message}")
         return {'success': False, 'messages': messages, 'response': response}
     
     # Check if the response contains choices
     if 'choices' not in response or not response['choices']:
-        print(f"tag_failed_request: 'choices' not found or empty in api response: \n{messages}")
+        print(f"validate_response_choices: 'choices' not found or empty in api response: \n{messages}")
         return {'success': False, 'messages': messages, 'response': response}
     
     return {'success': True, 'messages': messages, 'response': response}
@@ -88,9 +87,9 @@ def prompt_llm_parallel(model: str, messages: List[List[Dict]]) -> List[Dict]:
         
         # Asynchronous request processing function
         async def process_request(msg, idx):
-            response = await _send_openai_request({"model": model, "messages": msg})
+            response = await _send_openai_request({'model': model, 'messages': msg})
             result = _validate_response_choices(response, msg)
-            result["prompt_idx"] = idx
+            result['idx'] = idx
             return result
         
         # Asynchronously process all requests
@@ -112,5 +111,5 @@ def prompt_llm_single(model: str, messages: List[Dict]) -> Dict:
               the original message list, and the response dictionary.
     """
     # Send the request and validate the response
-    response = asyncio.run(_send_openai_request({"model": model, "messages": messages}))
+    response = asyncio.run(_send_openai_request({'model': model, 'messages': messages}))
     return _validate_response_choices(response, messages)

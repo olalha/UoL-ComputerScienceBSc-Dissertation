@@ -5,14 +5,10 @@ Streamlit main application.
 import os
 
 from pathlib import Path
-from dotenv import load_dotenv
 
 # Get absolute path to .env file
 current_dir = Path(__file__).resolve().parent
 env_path = current_dir / '.env'
-
-# Load environment variables
-load_dotenv(dotenv_path=env_path)
 
 # Check if environment variables are set
 required_env_vars = ['OPENAI_API_KEY']
@@ -22,7 +18,8 @@ if missing_vars:
     raise ValueError(f"Error: Missing required environment variables: {', '.join(missing_vars)}")
 
 import streamlit as st
-from utils.database import db_setup
+
+# from utils.database import db_setup
 
 # Initialize session state variables
 if 'alert' not in st.session_state:

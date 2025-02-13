@@ -6,18 +6,20 @@ def parse_topic_sentiment_distribution_Excel(rulebook_name: str) -> Optional[dic
     """
     Parse an Excel workbook for topic sentiment distribution.
 
-    This function loads an Excel workbook from the specified path and extracts topic sentiment distribution
-    data from a sheet named "MAIN". It processes rows beginning at row 4, expecting column A to contain topic
-    names (strings) and columns B through E to contain numeric values in the range [0, 1]. For each row, it 
-    verifies that columns C, D, and E sum to 1, and finally checks that the total of column B values across all 
-    included rows equals 1.
+    This function loads an Excel workbook from the specified path and extracts the review item name and topic 
+    sentiment distribution data from a sheet named "MAIN". It processes rows beginning at row 5, expecting column
+    A to contain topic names (strings) and columns B through E to contain numeric values in the range [0, 1]. 
+    For each row, it verifies that columns C, D, and E sum to 1, and finally checks that the total of column B 
+    values across all included rows equals 1.
 
     Args:
         path (str): The file path to an Excel workbook. The file must exist and have a ".xlsx" or ".xlsm" extension.
 
     Returns:
-        Optional[dict]: A dictionary mapping topic names (str) to a tuple containing a probability (float from column B)
-                        and a tuple of three floats (from columns C, D, and E). Returns None if an error occurs.
+        Optional[dict]:
+            - 'review_item': A string containing the review item name (from cell A1). 
+            - 'content': A dictionary mapping topic names (str) to a tuple containing a probability (float from column B)
+                and a tuple of three floats (from columns C, D, and E). Returns None if an error occurs.
     """
     try:
          # Get the path relative to the script location
@@ -37,9 +39,10 @@ def parse_topic_sentiment_distribution_Excel(rulebook_name: str) -> Optional[dic
             return None
         ws = wb["MAIN"]
 
-        result = {}
-        # Iterate over rows starting at row 4; stop at the first row where column A is empty
-        for row_num, row in enumerate(ws.iter_rows(min_row=4, max_col=5, values_only=True), start=4):
+        review_item = ws['A1'].value
+        content = {}
+        # Iterate over rows starting at row 5; stop at the first row where column A is empty
+        for row_num, row in enumerate(ws.iter_rows(min_row=5, max_col=5, values_only=True), start=5):
             # Unpack columns A through E
             topic, prob, c, d, e = row
             
@@ -64,15 +67,15 @@ def parse_topic_sentiment_distribution_Excel(rulebook_name: str) -> Optional[dic
 
             # Discard rows with zero proportion in column B
             if prob > 0:
-                result[topic] = (prob, (c, d, e))
+                content[topic] = (prob, (c, d, e))
         
         # Verify that the total probability from column B sums to 1
-        total_prob = sum(prob for prob, _ in result.values())
+        total_prob = sum(prob for prob, _ in content.values())
         if abs(total_prob - 1) > 1e-9:
             print("parse_topic_sentiment_distribution_Excel: Sum of column B values does not equal 1.")
             return None
 
-        return result
+        return {'review_item': review_item, 'content':content}
 
     except Exception as e:
         print(f"parse_topic_sentiment_distribution_Excel: {e}")
