@@ -120,9 +120,10 @@ def get_bucket_index(collection, buckets):
 
 def valid_collection(collection):
     """
-    A collection is valid if it does not contain duplicate topics.
+    Validates that a collection has unique topics
     """
     topics = [chunk['topic'] for chunk in collection]
+
     return len(topics) == len(set(topics))
 
 def initial_solution(chunks, buckets):
@@ -277,7 +278,7 @@ def propose_neighbor(state, buckets):
 
     return new_state if move_made else None
 
-def simulated_annealing(initial_state, buckets, time_limit=10, max_iter=10000):
+def simulated_annealing(initial_state, buckets, time_limit=10, max_iter=None):
     """
     Perform simulated annealing to find an optimal allocation of chunks to collections.
     
@@ -296,8 +297,12 @@ def simulated_annealing(initial_state, buckets, time_limit=10, max_iter=10000):
     cooling_rate = 0.999
     
     # Main search loop
-    print(f"simulated_annealing: Starting search for {time_limit} seconds or {max_iter} iterations.")
     iteration = 0
+    if max_iter is None:
+        print(f"simulated_annealing: Starting search for {time_limit} seconds.")
+        max_iter = float('inf')
+    else:
+        print(f"simulated_annealing: Starting search for {time_limit} seconds or {max_iter} iterations.")
     while (time.time() - start_time < time_limit) and (iteration < max_iter):
         iteration += 1
         neighbor = propose_neighbor(current_state, buckets)
@@ -324,7 +329,7 @@ def simulated_annealing(initial_state, buckets, time_limit=10, max_iter=10000):
 def allocate_chunks(chunks: list[dict], 
                     buckets: list[dict], 
                     time_limit: float = 10, 
-                    max_iter: int = 10000) -> Optional[list[dict]]:
+                    max_iter: int = None) -> Optional[list[dict]]:
     """
     Allocate the list of chunks into collections such that:
       - No collection contains duplicate topics (hard constraint)

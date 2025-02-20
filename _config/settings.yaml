@@ -7,8 +7,16 @@ DATABASE_URL: 'sqlite:///database.db'
 MODELS:
   GPT4o: 'gpt-4o'
   GPT4o-mini: 'gpt-4o-mini'
-  
-# Chunk word count settings
-CHUNK_WC_MIN: 20
-CHUNK_WC_MAX: 50
-TOTAL_WC: 10000
+
+# Excel parser settings
+CHUNK_COUNT_MAPPING:
+  Lowest_Number: 0.15
+  Low_Number: 0.30
+  Mean_Number: 0.50
+  High_Number: 0.70
+  Highest_Number: 0.85
+
+CHUNK_VAR_MAPPING:
+  Low_Variation: 10.0
+  Average_Variation: 5.0
+  High_Variation: 1.0

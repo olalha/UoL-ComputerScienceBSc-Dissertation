@@ -34,7 +34,7 @@ def get_chunks(N: int,
         Optional[List[int]]: A list of chunk sizes that sum to N, or None if there is an input error or no valid partition.
     """
     
-    """" Input validation """
+    """ Input validation """
     
     if not isinstance(N, int) or N <= 0:
         print("get_chunks: N must be a positive integer")
@@ -73,7 +73,7 @@ def get_chunks(N: int,
     # Maximum extra allowed per chunk
     extra_max = max_wc - min_wc
     
-    """" Allocate the remainder using Dirichlet distribution """
+    """ Allocate the remainder using Dirichlet distribution """
 
     # Obtain a vector of floats that sum to R
     extras_float = np.random.dirichlet([dirichlet_a] * chosen_i) * R
