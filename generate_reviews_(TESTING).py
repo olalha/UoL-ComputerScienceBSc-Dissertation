@@ -70,77 +70,72 @@ if __name__ == "__main__":
     
     print("Creating individual reviews...")
     
-    # Define bucket ranges and target fractions
-    BUCKETS = [
-        {'range': (30, 100), 'target_fraction': 1},
-    ]
-    solution = allocate_chunks(all_chunks, BUCKETS, time_limit=30)
+    # Find best allocation of chunks to collections
+    WC_RANGES = rulebook['collection_wc_ranges']
+    solution = allocate_chunks(all_chunks, WC_RANGES, time_limit=30)
     
     # Check if a solution was found
     if not solution:
         raise ValueError("Error: Failed to allocate chunks to collections.")
-    
-    # Visualize chunk allocation
-    visualize_chunk_allocation(solution)
 
-    # """ Review text generation """
+    """ Review text generation """
     
-    # print("Generating text for selected test reviews...")
+    print("Generating text for selected test reviews...")
     
-    # # Select test reviews
-    # selected_reviews = []
-    # reviews_per_bucket = 1
-    # bucket_counts = [0] * len(BUCKETS)
-    # for i in solution:
-    #     if i['bucket'] is not None and 0 <= i['bucket'] < len(BUCKETS): 
-    #         if bucket_counts[i['bucket']] < reviews_per_bucket:
-    #             bucket_counts[i['bucket']] += 1
-    #             selected_reviews.append(i['chunks'])
+    # Select test reviews
+    selected_reviews = []
+    reviews_per_bucket = 1
+    bucket_counts = [0] * len(WC_RANGES)
+    for i in solution:
+        if i['bucket'] is not None and 0 <= i['bucket'] < len(WC_RANGES): 
+            if bucket_counts[i['bucket']] < reviews_per_bucket:
+                bucket_counts[i['bucket']] += 1
+                selected_reviews.append(i['chunks'])
                 
-    # # Get model string
-    # model = get_setting('MODELS','GPT4o-mini')
+    # Get model string
+    model = get_setting('MODELS','GPT4o-mini')
     
-    # # Render individual chunk prompts
-    # selected_reviews_text_snippets = []
-    # for review in selected_reviews:
+    # Render individual chunk prompts
+    selected_reviews_text_snippets = []
+    for review in selected_reviews:
         
-    #     # Get messages for each chunk
-    #     chunk_messages = []
-    #     for chunk_dict in review:
-    #         prompt_context = {
-    #             'review_item': REVIEW_ITEM,
-    #             'topic': chunk_dict['topic'],
-    #             'sentiment': chunk_dict['sentiment'],
-    #             'word_count': chunk_dict['wc']
-    #         }
-    #         prompt = render_prompt("usr_chunk_gen.html", prompt_context)
-    #         messages = [{'role': 'user', 'content': prompt}]
-    #         chunk_messages.append({'chunk_dict': chunk_dict, 'messages': messages})
+        # Get messages for each chunk
+        chunk_messages = []
+        for chunk_dict in review:
+            prompt_context = {
+                'review_item': REVIEW_ITEM,
+                'topic': chunk_dict['topic'],
+                'sentiment': chunk_dict['sentiment'],
+                'word_count': chunk_dict['wc']
+            }
+            prompt = render_prompt("usr_chunk_gen.html", prompt_context)
+            messages = [{'role': 'user', 'content': prompt}]
+            chunk_messages.append({'chunk_dict': chunk_dict, 'messages': messages})
         
-    #     # Generate text for each chunk
-    #     messages = [i['messages'] for i in chunk_messages]
-    #     responses = prompt_llm_parallel(model=model, messages=messages)
+        # Generate text for each chunk
+        messages = [i['messages'] for i in chunk_messages]
+        responses = prompt_llm_parallel(model=model, messages=messages)
         
-    #     # Extract generated text
-    #     review_text_snippets = []
-    #     for r in responses:
-    #         chunk_dict = chunk_messages[r['idx']]['chunk_dict']
-    #         chunk_text = f"{chunk_dict['topic']} - {chunk_dict['sentiment']} - {chunk_dict['wc']} - \n"
-    #         if r['success']:
-    #             chunk_text += r['response']['choices'][0]['message']['content']
-    #         else:
-    #             chunk_text += "NOT GENERATED"
-    #             print(f"Failed to generate chunk: {chunk_dict}")
-    #         review_text_snippets.append(chunk_text)
-    #     selected_reviews_text_snippets.append(review_text_snippets)
+        # Extract generated text
+        review_text_snippets = []
+        for r in responses:
+            chunk_dict = chunk_messages[r['idx']]['chunk_dict']
+            chunk_text = f"{chunk_dict['topic']} - {chunk_dict['sentiment']} - {chunk_dict['wc']} - \n"
+            if r['success']:
+                chunk_text += r['response']['choices'][0]['message']['content']
+            else:
+                chunk_text += "NOT GENERATED"
+                print(f"Failed to generate chunk: {chunk_dict}")
+            review_text_snippets.append(chunk_text)
+        selected_reviews_text_snippets.append(review_text_snippets)
         
-    # """
-    # At this point we have a list of reviews, each containing a list of text snippets.
-    # The text snippets need be combined to form the full review text with the prompt usr_review_gen.html.
-    # """
+    """
+    At this point we have a list of reviews, each containing a list of text snippets.
+    The text snippets need be combined to form the full review text with the prompt usr_review_gen.html.
+    """
         
-    # # Print generated text
-    # for idx, review_text_snippets in enumerate(selected_reviews_text_snippets):
-    #     print(f"\nReview {idx+1}:")
-    #     for snippet in review_text_snippets:
-    #         print(f"\n{snippet}")
+    # Print generated text
+    for idx, review_text_snippets in enumerate(selected_reviews_text_snippets):
+        print(f"\nReview {idx+1}:")
+        for snippet in review_text_snippets:
+            print(f"\n{snippet}")

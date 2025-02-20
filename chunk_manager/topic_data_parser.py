@@ -16,10 +16,12 @@ def parse_topic_sentiment_distribution_Excel(rulebook_name: str) -> Optional[dic
           - 'sentiment_proportion': a tuple of three floats from cols C, D, and E (which must sum to 1)
           - 'chunk_min_wc': int from col H (must be > 0)
           - 'chunk_max_wc': int from col I (must be > chunk_min_wc)
-          - 'chunk_count_pref': mapped from col K if present
-          - 'chunk_wc_distribution': mapped from col L if present
-    
-    The function also validates that the sum of all 'total_proportion' values equals 1.
+          - 'chunk_count_pref': mapped from col J if present
+          - 'chunk_wc_distribution': mapped from col K if present
+      - 'collection_wc_ranges': a list of dictionaries representing word count ranges,
+          each with keys:
+              - 'range': a tuple (start, end) where end > start
+              - 'target_fraction': fraction for this range (must sum to 1)
 
     Args:
         rulebook_name (str): The file name of the Excel workbook, located in the "rulebooks" directory.
@@ -30,12 +32,13 @@ def parse_topic_sentiment_distribution_Excel(rulebook_name: str) -> Optional[dic
               - 'review_item'
               - 'total_wc'
               - 'content_rules'
+              - 'collection_wc_ranges'
             Returns None if an error occurs.
     """
     try:
         # Get the file path relative to the script location
         file_path = Path(__file__).parent / "rulebooks" / rulebook_name
-        
+
         if not file_path.exists():
             print(f"parse_topic_sentiment_distribution_Excel: File does not exist: {file_path}")
             return None
@@ -65,7 +68,6 @@ def parse_topic_sentiment_distribution_Excel(rulebook_name: str) -> Optional[dic
         content_rules = {}
         # Iterate over rows starting at row 5; include columns A-E and H-K.
         for row_num, row in enumerate(ws.iter_rows(min_row=5, max_col=11, values_only=True), start=5):
-            
             # Column A: topic (index 0)
             topic = row[0]
             # Column B: total_proportion (index 1)
@@ -82,7 +84,7 @@ def parse_topic_sentiment_distribution_Excel(rulebook_name: str) -> Optional[dic
             chunk_count_pref_raw = row[9]
             # Column K: chunk_wc_distribution (index 10)
             chunk_wc_distribution_raw = row[10]
-            
+
             # Terminate iteration if the topic cell is empty
             if topic is None:
                 break
@@ -161,17 +163,63 @@ def parse_topic_sentiment_distribution_Excel(rulebook_name: str) -> Optional[dic
                     'chunk_count_pref': chunk_count_pref,
                     'chunk_wc_distribution': chunk_wc_distribution
                 }
-        
+
         # Verify that the sum of total_proportion values equals 1
         total_prob = sum(rule['total_proportion'] for rule in content_rules.values())
         if abs(total_prob - 1) > 1e-9:
             print("parse_topic_sentiment_distribution_Excel: Sum of column B values does not equal 1.")
             return None
 
+        # Process ALLOCATION sheet for collection_wc_ranges
+        if "ALLOCATION" not in wb.sheetnames:
+            print(f"parse_topic_sentiment_distribution_Excel: 'ALLOCATION' sheet not found in workbook: {file_path}")
+            return None
+
+        allocation_ws = wb["ALLOCATION"]
+        collection_wc_ranges = []
+        for row_num, row in enumerate(allocation_ws.iter_rows(min_row=4, max_col=3, values_only=True), start=4):
+            # Expecting: Column A: start, Column B: end, Column C: proportion
+            start_val, end_val, prop_val = row[0], row[1], row[2]
+            # Terminate iteration if the start cell is empty
+            if start_val is None:
+                break
+
+            # Validate that all three cells are present and numeric
+            if start_val is None or end_val is None or prop_val is None:
+                print(f"parse_topic_sentiment_distribution_Excel: Missing value in ALLOCATION sheet at row {row_num}.")
+                return None
+            if not isinstance(start_val, int) or not isinstance(end_val, int) or not isinstance(prop_val, (int, float)):
+                print(f"parse_topic_sentiment_distribution_Excel: Incorrect value in ALLOCATION sheet at row {row_num}.")
+                return None
+
+            # Validate that end is greater than start
+            if end_val <= start_val:
+                print(f"parse_topic_sentiment_distribution_Excel: In ALLOCATION sheet at row {row_num}, end ({end_val}) must be greater than start ({start_val}).")
+                return None
+
+            # If this is not the first range, ensure the current start is previous end + 1
+            if collection_wc_ranges:
+                previous_end = collection_wc_ranges[-1]['range'][1]
+                if start_val != previous_end + 1:
+                    print(f"parse_topic_sentiment_distribution_Excel: In ALLOCATION sheet at row {row_num}, start ({start_val}) must be equal to previous end + 1 ({previous_end + 1}).")
+                    return None
+
+            collection_wc_ranges.append({
+                'range': (int(start_val), int(end_val)),
+                'target_fraction': float(prop_val)
+            })
+
+        # Validate that the sum of all proportions equals 1
+        total_fraction = sum(item['target_fraction'] for item in collection_wc_ranges)
+        if abs(total_fraction - 1) > 1e-9:
+            print("parse_topic_sentiment_distribution_Excel: Sum of fractions in ALLOCATION sheet does not equal 1.")
+            return None
+
         return {
             'review_item': review_item,
             'total_wc': total_wc,
-            'content_rules': content_rules
+            'content_rules': content_rules,
+            'collection_wc_ranges': collection_wc_ranges
         }
 
     except Exception as e:
