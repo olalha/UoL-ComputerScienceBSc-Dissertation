@@ -4,9 +4,10 @@ from typing import Optional
 
 from utils.settings_manager import get_setting
 
-def parse_topic_sentiment_distribution_Excel(rulebook_name: str) -> Optional[dict]:
+def parse_rulebook_excel(rulebook_name: str) -> Optional[dict]:
     """
     Parse an Excel workbook for topic sentiment distribution with additional parameters.
+    This Excel workbook needs to follow the structure of the template workbook.
 
     This function loads an Excel workbook from the specified path and extracts:
       - 'review_item': from cell A1,

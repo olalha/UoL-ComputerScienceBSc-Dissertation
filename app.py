@@ -1,10 +1,11 @@
-"""
-Streamlit main application.
-"""
-
 import os
-
 from pathlib import Path
+
+from utils.settings_manager import get_setting
+from chunk_manager.rulebook_parser import parse_rulebook_excel
+from dataset_manager.generate_dataset import generate_dataset
+
+""" Environment setup """
 
 # Get absolute path to .env file
 current_dir = Path(__file__).resolve().parent
@@ -17,22 +18,17 @@ missing_vars = [var for var in required_env_vars if not os.getenv(var)]
 if missing_vars:
     raise ValueError(f"Error: Missing required environment variables: {', '.join(missing_vars)}")
 
-import streamlit as st
+""" Review content generation """
 
-# from utils.database import db_setup
+# Parse Excel rulebook
+RULEBOOK_NAME = "TEMPLATE.xlsx"
+rulebook = parse_rulebook_excel(RULEBOOK_NAME)
+if not rulebook:
+    raise ValueError(f"Error: Parsing rulebook {RULEBOOK_NAME} failed.")
 
-# Initialize session state variables
-if 'alert' not in st.session_state:
-    st.session_state.alert = None
+model = get_setting('OPENAI_LLM_MODELS', 'GPT4o-mini')
+generate_dataset(rulebook=rulebook, solution_search_time_s=30, model=model)
 
-# Define pages
-
-test_page = st.Page(
-    page="views/test_view.py",
-    title="Test",
-    default=True
-)
-
-# Setup navigation
-nav = st.navigation(pages=[test_page])
-nav.run()
+"""
+So far the program will take the inputted rulebook, allocate the chunks, generate the dataset, and then print it to the console.
+"""

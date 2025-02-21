@@ -1,10 +1,13 @@
 # SETTINGS FILE
 
-# Database settings
-DATABASE_URL: 'sqlite:///database.db'
+# OpenAI API settings
+OPENAI_API:
+  retry_limit: 3
+  rate_limit_sleep_sec: 60
+  max_client_timeout_sec: 30
 
 # Model settings
-MODELS:
+OPENAI_LLM_MODELS:
   GPT4o: 'gpt-4o'
   GPT4o-mini: 'gpt-4o-mini'
 

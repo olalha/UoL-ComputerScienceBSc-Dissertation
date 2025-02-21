@@ -326,12 +326,12 @@ def simulated_annealing(initial_state, buckets, time_limit=10, max_iter=None):
 
 """ Main Function """
 
-def allocate_chunks(chunks: list[dict], 
+def aggregate_chunks(chunks: list[dict], 
                     buckets: list[dict], 
                     time_limit: float = 10, 
                     max_iter: int = None) -> Optional[list[dict]]:
     """
-    Allocate the list of chunks into collections such that:
+    Aggregation the chunks into collections such that:
       - No collection contains duplicate topics (hard constraint)
       - The overall distribution (by total word count per collection) approximates
         the target fractions provided in the buckets (soft constraint, with penalty).
@@ -373,9 +373,9 @@ def allocate_chunks(chunks: list[dict],
 
 """ Visualization Functions """
 
-def visualize_chunk_allocation(state):
+def visualize_chunk_aggregation(state):
     """
-    Visualize chunk allocation as a stacked bar chart.
+    Visualize chunk aggregation as a stacked bar chart.
 
     Collections are sorted by total word count, and each collection's chunks 
     are ordered by sentiment ('negative', 'netrual', 'positive'). The chart displays vertical 
@@ -431,7 +431,7 @@ if __name__ == "__main__":
         {'range': (201, 250), 'target_fraction': 0.5},
     ]
 
-    solution = allocate_chunks(chunks, buckets, time_limit=5, max_iter=5000)
+    solution = aggregate_chunks(chunks, buckets, time_limit=5)
     if solution is not None:
         print("Solution found:")
         for coll in solution:
