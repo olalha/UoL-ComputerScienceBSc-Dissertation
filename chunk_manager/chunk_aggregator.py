@@ -3,7 +3,6 @@ import math
 import time
 import copy
 from typing import Optional
-
 import matplotlib.pyplot as plt
 
 """ Input Validation Functions """
@@ -11,8 +10,7 @@ import matplotlib.pyplot as plt
 def validate_chunks(chunks):
     """
     Validate the input chunks list.
-    
-    Each chunk must be a dictionary with keys 'topic', 'sentiment', and 'wc'. 
+    Each chunk must be a dictionary with keys 'topic', 'sentiment', and 'wc'.
     """
     if not isinstance(chunks, list):
         print("validate_chunks: Chunks must be a list.")
@@ -36,148 +34,141 @@ def validate_chunks(chunks):
             return False
     return True
 
-def validate_buckets(buckets):
+def validate_collections(collections):
     """
-    Validate the input buckets list.
-    
-    Each bucket must be a dictionary with keys 'range' and 'target_fraction'.
+    Validate the input collections list.
+    Each collection must be a dictionary with keys 'range' and 'target_fraction'.
     The 'range' key must contain a tuple of two integers.
-    The 'target_fraction' key must contain a numeric value.
     Ranges must not overlap or have gaps between them.
+    For collection size collections, ranges like (1, 1) are allowed.
     """
-    if not isinstance(buckets, list):
-        print("validate_buckets: Buckets must be a list.")
+    if not isinstance(collections, list):
+        print("validate_collections: Collections must be a list.")
         return False
-    
     total_fraction = 0.0
     ranges = []
-    min_value = float('inf')
-    max_value = float('-inf')
-    
-    for bucket in buckets:
-        if not isinstance(bucket, dict):
-            print("validate_buckets: Each bucket must be a dict.")
+    for collection in collections:
+        if not isinstance(collection, dict):
+            print("validate_collections: Each collection must be a dict.")
             return False
         for key in ['range', 'target_fraction']:
-            if key not in bucket:
-                print(f"validate_buckets: Each bucket must have '{key}'.")
+            if key not in collection:
+                print(f"validate_collections: Each collection must have '{key}'.")
                 return False
-        if not (isinstance(bucket['range'], tuple) and len(bucket['range']) == 2):
-            print("validate_buckets: Bucket 'range' must be a tuple of two ints.")
+        if not (isinstance(collection['range'], tuple) and len(collection['range']) == 2):
+            print("validate_collections: Collection 'range' must be a tuple of two ints.")
             return False
-        low, high = bucket['range']
+        low, high = collection['range']
         if not (isinstance(low, int) and isinstance(high, int)):
-            print("validate_buckets: Bucket range values must be integers.")
+            print("validate_collections: Collection range values must be integers.")
             return False
-        if low >= high:
-            print("validate_buckets: Bucket range low must be less than high.")
+        if low > high:
+            print("validate_collections: Collection range low must be less than or equal to high.")
             return False
-        if not isinstance(bucket['target_fraction'], (int, float)):
-            print("validate_buckets: Bucket 'target_fraction' must be numeric.")
+        if not isinstance(collection['target_fraction'], (int, float)):
+            print("validate_collections: Collection 'target_fraction' must be numeric.")
             return False
-            
-        # Track min and max values
-        min_value = min(min_value, low)
-        max_value = max(max_value, high)
         ranges.append((low, high))
-        total_fraction += bucket['target_fraction']
+        total_fraction += collection['target_fraction']
     
-    # Check for overlapping ranges
+    # Check for overlapping ranges.
     ranges.sort()
     for i in range(len(ranges) - 1):
         if ranges[i][1] >= ranges[i + 1][0]:
-            print("validate_buckets: Bucket ranges must not overlap.")
+            print("validate_collections: Collection ranges must not overlap.")
             return False
     
-    # Check for gaps in ranges
+    # Check for gaps in ranges.
     for i in range(len(ranges) - 1):
         if ranges[i][1] + 1 < ranges[i + 1][0]:
-            print("validate_buckets: Bucket ranges must not have gaps.")
+            print("validate_collections: Collection ranges must not have gaps.")
             return False
     
     if abs(total_fraction - 1.0) > 1e-6:
-        print("validate_buckets: Sum of target fractions must equal 1.")
+        print("validate_collections: Sum of target fractions must equal 1.")
         return False
         
     return True
 
-""" Collection Manupulation Functions """
+""" Collection Manipulation Functions """
 
 def compute_total_wc(collection):
+    """Return the total word count of a collection."""
     return sum(chunk['wc'] for chunk in collection)
 
-def get_bucket_index(collection, buckets):
+def get_collection_index(collection, collections, value_extractor):
     """
-    Return the index of the bucket into which this collection falls,
-    based on its total word count (None if no bucket matches).
+    Return the index of the collection into which this collection falls,
+    based on the numerical value returned by value_extractor.
+    (For example, total word count or number of chunks.)
+    Returns None if no collection matches.
     """
-    total_wc = compute_total_wc(collection)
-    for i, bucket in enumerate(buckets):
-        low, high = bucket['range']
-        if low <= total_wc <= high:
+    value = value_extractor(collection)
+    for i, collection_obj in enumerate(collections):
+        low, high = collection_obj['range']
+        if low <= value <= high:
             return i
     return None
 
 def valid_collection(collection):
     """
-    Validates that a collection has unique topics
+    Validate that a collection has unique topics.
     """
     topics = [chunk['topic'] for chunk in collection]
-
     return len(topics) == len(set(topics))
 
-def initial_solution(chunks, buckets):
+def initial_solution(chunks, collections, value_extractor):
     """
     Simple initial state: Put each chunk in its own collection.
     (This always respects the hard constraint.)
     """
     state = []
     for chunk in chunks:
-        collection = [chunk]
-        state.append({'chunks': collection, 'bucket': get_bucket_index(collection, buckets)})
+        collection_chunks = [chunk]
+        state.append({'chunks': collection_chunks, 'collection': get_collection_index(collection_chunks, collections, value_extractor)})
     return state
 
 """ Heuristic / Penalty Functions """
 
-def compute_cost(state, buckets):
+def compute_cost(state, collections, value_extractor):
     """
-    Compute the overall penalty as the sum over buckets of the squared
-    difference between the actual fraction of collections in that bucket
+    Compute the overall penalty as the sum over collections of the squared
+    difference between the actual fraction of collections in that collection
     and the target fraction.
     """
     N = len(state)
-    counts = [0] * len(buckets)
+    counts = [0] * len(collections)
     for coll in state:
-        idx = coll['bucket']
+        idx = coll['collection']
         if idx is not None:
             counts[idx] += 1
     penalty = 0.0
-    for i, bucket in enumerate(buckets):
+    for i, collection_obj in enumerate(collections):
         actual_fraction = counts[i] / N if N > 0 else 0
-        target_fraction = bucket['target_fraction']
+        target_fraction = collection_obj['target_fraction']
         penalty += (actual_fraction - target_fraction) ** 2
     return penalty
 
-def update_bucket_for_collection(collection_obj, buckets):
+def update_collection_for_collection(collection_obj, collections, value_extractor):
     """
-    Update the bucket assignment for a single collection and return a tuple
-    (old_bucket, new_bucket) so that an incremental cost update can be performed.
+    Update the collection assignment for a single collection and return a tuple
+    (old_collection, new_collection) so that an incremental cost update can be performed.
     """
-    new_bucket = get_bucket_index(collection_obj['chunks'], buckets)
-    old_bucket = collection_obj['bucket']
-    collection_obj['bucket'] = new_bucket
-    return old_bucket, new_bucket
+    new_collection = get_collection_index(collection_obj['chunks'], collections, value_extractor)
+    old_collection = collection_obj['collection']
+    collection_obj['collection'] = new_collection
+    return old_collection, new_collection
 
 """ Functions For Simulated Annealing """
 
-def propose_neighbor(state, buckets):
+def propose_neighbor(state, collections, value_extractor):
     """
     Propose a neighboring state by randomly selecting one of the following moves:
-      - move: Remove a chunk from one collection and add it to another (or new) collection.
+      - move: Remove a chunk from one collection and add it to another (or a new collection).
       - swap: Swap a chunk between two collections.
       - merge: Merge two collections (if valid).
       - split: Split one collection into two.
-      
+    
     The move is only accepted if it maintains the hard constraint.
     Returns a new state (deep copy) if a move was made, or None if no move was possible.
     """
@@ -187,7 +178,6 @@ def propose_neighbor(state, buckets):
     move_type = random.choice(["move", "swap", "merge", "split"])
 
     if move_type == "move":
-        # Choose a random source collection with at least one chunk.
         if len(new_state) == 0:
             return None
         source_idx = random.randint(0, len(new_state) - 1)
@@ -196,26 +186,21 @@ def propose_neighbor(state, buckets):
         source_coll = new_state[source_idx]['chunks']
         chunk_idx = random.randint(0, len(source_coll) - 1)
         chunk = source_coll.pop(chunk_idx)
-        # Randomly decide to move to an existing collection or create a new one.
         if new_state and random.random() < 0.5 and len(new_state) > 1:
             target_candidates = [i for i in range(len(new_state)) if i != source_idx]
             target_idx = random.choice(target_candidates)
             target_coll = new_state[target_idx]['chunks']
-            # Check hard constraint: chunk's topic must not be present.
             if any(c['topic'] == chunk['topic'] for c in target_coll):
-                # Revert move
                 source_coll.insert(chunk_idx, chunk)
                 return None
             target_coll.append(chunk)
-            update_bucket_for_collection(new_state[target_idx], buckets)
+            update_collection_for_collection(new_state[target_idx], collections, value_extractor)
             move_made = True
         else:
-            # Create a new collection with the chunk.
-            new_state.append({'chunks': [chunk], 'bucket': get_bucket_index([chunk], buckets)})
+            new_state.append({'chunks': [chunk], 'collection': get_collection_index([chunk], collections, value_extractor)})
             move_made = True
-        update_bucket_for_collection(new_state[source_idx], buckets)
+        update_collection_for_collection(new_state[source_idx], collections, value_extractor)
         if len(new_state[source_idx]['chunks']) == 0:
-            # Remove the empty collection.
             del new_state[source_idx]
 
     elif move_type == "swap":
@@ -228,17 +213,13 @@ def propose_neighbor(state, buckets):
             return None
         pos1 = random.randint(0, len(coll1) - 1)
         pos2 = random.randint(0, len(coll2) - 1)
-        chunk1 = coll1[pos1]
-        chunk2 = coll2[pos2]
-        # Check if swapping preserves the constraint.
         temp1 = coll1.copy()
         temp2 = coll2.copy()
-        temp1[pos1] = chunk2
-        temp2[pos2] = chunk1
+        temp1[pos1], temp2[pos2] = coll2[pos2], coll1[pos1]
         if valid_collection(temp1) and valid_collection(temp2):
             coll1[pos1], coll2[pos2] = coll2[pos2], coll1[pos1]
-            update_bucket_for_collection(new_state[idx1], buckets)
-            update_bucket_for_collection(new_state[idx2], buckets)
+            update_collection_for_collection(new_state[idx1], collections, value_extractor)
+            update_collection_for_collection(new_state[idx2], collections, value_extractor)
             move_made = True
         else:
             return None
@@ -252,14 +233,13 @@ def propose_neighbor(state, buckets):
         merged = coll1 + coll2
         if valid_collection(merged):
             new_state[idx1]['chunks'] = merged
-            update_bucket_for_collection(new_state[idx1], buckets)
+            update_collection_for_collection(new_state[idx1], collections, value_extractor)
             del new_state[idx2]
             move_made = True
         else:
             return None
 
     elif move_type == "split":
-        # Attempt to split a collection with at least 2 chunks.
         candidate_indices = [i for i, coll in enumerate(new_state) if len(coll['chunks']) >= 2]
         if not candidate_indices:
             return None
@@ -270,33 +250,28 @@ def propose_neighbor(state, buckets):
         new_coll2 = coll[split_point:]
         if valid_collection(new_coll1) and valid_collection(new_coll2):
             new_state[idx]['chunks'] = new_coll1
-            new_state[idx]['bucket'] = get_bucket_index(new_coll1, buckets)
-            new_state.append({'chunks': new_coll2, 'bucket': get_bucket_index(new_coll2, buckets)})
+            new_state[idx]['collection'] = get_collection_index(new_coll1, collections, value_extractor)
+            new_state.append({'chunks': new_coll2, 'collection': get_collection_index(new_coll2, collections, value_extractor)})
             move_made = True
         else:
             return None
 
     return new_state if move_made else None
 
-def simulated_annealing(initial_state, buckets, time_limit=10, max_iter=None):
+def simulated_annealing(initial_state, collections, value_extractor, time_limit=10, max_iter=None):
     """
     Perform simulated annealing to find an optimal allocation of chunks to collections.
-    
-    The algorithm will run for a specified time limit or maximum number of iterations.
+    The algorithm runs for a specified time limit or maximum number of iterations.
     Returns the best state found during the search.
     """
-    
     start_time = time.time()
     current_state = initial_state
     best_state = copy.deepcopy(initial_state)
-    current_cost = compute_cost(current_state, buckets)
+    current_cost = compute_cost(current_state, collections, value_extractor)
     best_cost = current_cost
     
-    # High cooling rate to quickly explore the solution space.
     T = 1.0
     cooling_rate = 0.999
-    
-    # Main search loop
     iteration = 0
     if max_iter is None:
         print(f"simulated_annealing: Starting search for {time_limit} seconds.")
@@ -305,12 +280,11 @@ def simulated_annealing(initial_state, buckets, time_limit=10, max_iter=None):
         print(f"simulated_annealing: Starting search for {time_limit} seconds or {max_iter} iterations.")
     while (time.time() - start_time < time_limit) and (iteration < max_iter):
         iteration += 1
-        neighbor = propose_neighbor(current_state, buckets)
+        neighbor = propose_neighbor(current_state, collections, value_extractor)
         if neighbor is None:
-            continue  # No valid move found; try another iteration.
-        new_cost = compute_cost(neighbor, buckets)
+            continue
+        new_cost = compute_cost(neighbor, collections, value_extractor)
         delta = new_cost - current_cost
-        # Accept if cost is lower or with probability exp(-delta/T)
         if delta < 0 or random.random() < math.exp(-delta / T):
             current_state = neighbor
             current_cost = new_cost
@@ -318,8 +292,6 @@ def simulated_annealing(initial_state, buckets, time_limit=10, max_iter=None):
                 best_state = copy.deepcopy(neighbor)
                 best_cost = new_cost
         T *= cooling_rate
-
-    # Check if time limit or iteration limit was reached.
     if time.time() - start_time >= time_limit or iteration >= max_iter:
         print("simulated_annealing: Search time limit has been hit - Returning best found solution.")
     return best_state
@@ -327,46 +299,42 @@ def simulated_annealing(initial_state, buckets, time_limit=10, max_iter=None):
 """ Main Function """
 
 def aggregate_chunks(chunks: list[dict], 
-                    buckets: list[dict], 
-                    time_limit: float = 10, 
-                    max_iter: int = None) -> Optional[list[dict]]:
+                     collections: list[dict], 
+                     collection_mode: str,
+                     time_limit: float = 10, 
+                     max_iter: int = None) -> Optional[list[dict]]:
     """
-    Aggregation the chunks into collections such that:
+    Aggregate the chunks into collections such that:
       - No collection contains duplicate topics (hard constraint)
-      - The overall distribution (by total word count per collection) approximates
-        the target fractions provided in the buckets (soft constraint, with penalty).
-    If no valid solution is found, print an error and return None.
-
-    Args:
-        chunks (list[dict]): List of dictionaries representing chunks, each with keys 'topic', 'sentiment', 'wc'
-        buckets (list[dict]): List of dictionaries representing buckets, each with keys 'range', 'target_fraction'
-        time_limit (float): Maximum time to run in seconds
-        max_iter (int): Maximum number of iterations
-        
-    Returns:
-        List of dictionaries representing collections of chunks, or None if no valid solution found
+      - The overall distribution (by either total word count or number of chunks per collection)
+        approximates the target fractions provided in the collections (soft constraint, via a penalty function).
+    The parameter 'collection_mode' should be either "word" or "chunk".
     """
-    # Validate inputs.
     if not validate_chunks(chunks):
         return None
-    if not validate_buckets(buckets):
+    if not validate_collections(collections):
         return None
 
-    # Generate an initial solution.
-    state = initial_solution(chunks, buckets)
-    # Verify the hard constraint.
+    # Define value_extractor based on collection_mode.
+    if collection_mode == "word":
+        value_extractor = compute_total_wc
+    elif collection_mode == "chunk":
+        value_extractor = lambda collection: len(collection)
+    else:
+        print("aggregate_chunks: Invalid collection_mode (must be 'word' or 'chunk').")
+        return None
+
+    state = initial_solution(chunks, collections, value_extractor)
     for coll in state:
         if not valid_collection(coll['chunks']):
-            print("allocate_chunks: Initial solution violates hard constraint")
+            print("aggregate_chunks: Initial solution violates hard constraint")
             return None
 
-    # Use simulated annealing to search for an optimal allocation.
-    best_state = simulated_annealing(state, buckets, time_limit, max_iter)
+    best_state = simulated_annealing(state, collections, value_extractor, time_limit, max_iter)
 
-    # Final check: ensure no collection violates the hard constraint.
     for coll in best_state:
         if not valid_collection(coll['chunks']):
-            print("allocate_chunks: No solution has been found")
+            print("aggregate_chunks: No solution has been found")
             return None
 
     return best_state
@@ -425,18 +393,38 @@ if __name__ == "__main__":
         # ... add more chunks as needed
     ]
     
-    buckets = [
-        {'range': (50, 100), 'target_fraction': 0.4},
-        {'range': (101, 200), 'target_fraction': 0.1},
-        {'range': (201, 250), 'target_fraction': 0.5},
+    # Example collections for "chunk" mode: (min, max, fraction)
+    # 40% of collections must have exactly 1 chunk,
+    # 30% must have between 2 and 3 chunks,
+    # 30% must have between 4 and 6 chunks.
+    collections_chunk = [
+        {'range': (1, 1), 'target_fraction': 0.40},
+        {'range': (2, 3), 'target_fraction': 0.30},
+        {'range': (4, 6), 'target_fraction': 0.30},
+    ]
+    
+    # Example collections for "word" mode (if desired):
+    collections_word = [
+        {'range': (50, 100), 'target_fraction': 0.40},
+        {'range': (101, 200), 'target_fraction': 0.30},
+        {'range': (201, 250), 'target_fraction': 0.30},
     ]
 
-    solution = aggregate_chunks(chunks, buckets, time_limit=5)
+    # Choose mode: "chunk" or "word"
+    mode = "chunk"
+    collections = collections_chunk if mode == "chunk" else collections_word
+
+    solution = aggregate_chunks(chunks, collections, collection_mode=mode, time_limit=5)
     if solution is not None:
         print("Solution found:")
         for coll in solution:
             topics = [chunk['topic'] for chunk in coll['chunks']]
-            total_wc = compute_total_wc(coll['chunks'])
-            print(f"Collection: {topics}, Total WC: {total_wc}")
+            if mode == "chunk":
+                size = len(coll['chunks'])
+                print(f"Collection: {topics}, Size: {size}")
+            else:
+                total_wc = compute_total_wc(coll['chunks'])
+                print(f"Collection: {topics}, Total WC: {total_wc}")
+        visualize_chunk_aggregation(solution)
     else:
         print("No valid allocation found.")

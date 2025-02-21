@@ -19,6 +19,13 @@ CHUNK_COUNT_MAPPING:
   High_Number: 0.70
   Highest_Number: 0.85
 
+CHUNK_SIZE_MAPPING:
+  Very_Small: 0.10
+  Small: 0.25
+  Medium: 0.50
+  Large: 0.75
+  Very_Large: 0.90
+
 CHUNK_VAR_MAPPING:
   Low_Variation: 10.0
   Average_Variation: 5.0

@@ -21,13 +21,15 @@ if missing_vars:
 """ Review content generation """
 
 # Parse Excel rulebook
-RULEBOOK_NAME = "TEMPLATE.xlsx"
-rulebook = parse_rulebook_excel(RULEBOOK_NAME)
+RULEBOOK_NAME = "Laptop---chunk_count.xlsx"
+COLLECTION_MODE = "chunk"
+
+rulebook = parse_rulebook_excel(rulebook_name=RULEBOOK_NAME, collection_mode=COLLECTION_MODE)
 if not rulebook:
     raise ValueError(f"Error: Parsing rulebook {RULEBOOK_NAME} failed.")
 
 model = get_setting('OPENAI_LLM_MODELS', 'GPT4o-mini')
-generate_dataset(rulebook=rulebook, solution_search_time_s=30, model=model)
+generate_dataset(rulebook=rulebook, collection_mode=COLLECTION_MODE, solution_search_time_s=30, model=model)
 
 """
 So far the program will take the inputted rulebook, allocate the chunks, generate the dataset, and then print it to the console.

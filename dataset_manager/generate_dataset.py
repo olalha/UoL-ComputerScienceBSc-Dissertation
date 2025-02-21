@@ -4,9 +4,9 @@ from typing import Optional
 from utils.api_request import prompt_openai_llm_parallel
 from prompt_manager.prompt_builder import render_prompt
 from chunk_manager.chunk_partitioner import get_chunks
-from chunk_manager.chunk_aggregator import aggregate_chunks
+from chunk_manager.chunk_aggregator import aggregate_chunks, visualize_chunk_aggregation
 
-def generate_dataset(rulebook: dict, solution_search_time_s: int, model: str) -> Optional[str]:
+def generate_dataset(rulebook: dict, collection_mode: str, solution_search_time_s: int, model: str) -> Optional[str]:
     
     try:
         # Validate rulebook
@@ -16,44 +16,25 @@ def generate_dataset(rulebook: dict, solution_search_time_s: int, model: str) ->
         print("generate_dataset: Partitioning chunks...")
         
         # Generate chunks
-        all_chunks_dicts = []
-        TOTAL_WC = rulebook['total_wc']
-        for topic_name, topic_dict in rulebook['content_rules'].items():
-            # Get topic word count
-            topic_wc = int(TOTAL_WC * topic_dict['total_proportion'])
-            
-            # Get sentiment word count
-            for index, sentiment in enumerate(["positive", "neutral", "negative"]):
-                topic_sentiment_wc = int(topic_wc * topic_dict['sentiment_proportion'][index])
-                
-                # Skip if no word count
-                if topic_sentiment_wc == 0:
-                    continue
-                
-                # Partition topic-sentiment word count into chunks
-                chunks = get_chunks(
-                    N=topic_sentiment_wc, 
-                    min_wc=topic_dict['chunk_min_wc'], 
-                    max_wc=topic_dict['chunk_max_wc'], 
-                    chunk_count_pref=topic_dict['chunk_count_pref'], 
-                    dirichlet_a=topic_dict['chunk_wc_distribution'])
-
-                # Check if partitioning failed
-                if not chunks:
-                    raise ValueError(f"generate_dataset: Partitioning fail - '{topic_name}' - '{sentiment}' - wc:{topic_sentiment_wc}.")
-                
-                # Add chunks to all_chunks if partitioning succeeded
-                all_chunks_dicts.extend([{'topic': topic_name, 'sentiment': sentiment, 'wc': i} for i in chunks])
+        all_chunks_dicts = get_chunks(rulebook=rulebook, collection_mode=collection_mode)
+        
+        # Check if partitioning failed
+        if not all_chunks_dicts:
+            raise ValueError("generate_dataset: Failed to partition chunks.")
         
         print("generate_dataset: Aggregating chunks...")
         
         # Find best allocation of chunks to collections
-        WC_RANGES = rulebook['collection_wc_ranges']
-        solution = aggregate_chunks(all_chunks_dicts, WC_RANGES, time_limit=solution_search_time_s)
+        collection_ranges = rulebook['collection_ranges']
+        solution = aggregate_chunks(all_chunks_dicts, collection_ranges, collection_mode=collection_mode, time_limit=solution_search_time_s)
         
         # Check if a solution was found
         if not solution:
             raise ValueError("generate_dataset: Failed to allocate chunks to collections.")
+        
+        visualize_chunk_aggregation(solution)
+        
+        raise ValueError("generate_dataset: PAUSING - Remove this to generate text.")
         
         all_collections = [[{'chunk_dict': chunk_dict} for chunk_dict in i['chunks']] for i in solution]
         
@@ -125,5 +106,5 @@ def generate_dataset(rulebook: dict, solution_search_time_s: int, model: str) ->
 
     # Return none if an exception occurred during generation
     except Exception as e:
-        print(f"generate_dataset: {e}")
+        print(f"{e}")
         return None

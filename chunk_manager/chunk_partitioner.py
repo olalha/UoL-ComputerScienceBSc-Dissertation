@@ -1,92 +1,39 @@
+
 import math
 import random
 from typing import Optional, List
 import numpy as np
-import matplotlib.pyplot as plt
 
-def get_chunks(N: int, 
-               min_wc: int, 
-               max_wc: int, 
-               chunk_count_pref: float = 0.5, 
-               dirichlet_a: float = 5.0) -> Optional[List[int]]:
+def _allocate_extras(num_chunks: int, R: int, extra_max: int, dirichlet_a: float) -> List[int]:
     """
-    Partition the total word count N into a list of chunk sizes, each between min_wc and max_wc.
-    
-    The number of chunks is determined by a preference value (chunk_count_pref) between 0 and 1:
-      - 0 corresponds to the minimum possible number of chunks.
-      - 1 corresponds to the maximum possible number of chunks.
-      - 0.5 corresponds to the average (middle) number of chunks.
-    
-    The extra words beyond the minimum allocation are distributed among the chunks using a Dirichlet distribution
-    with concentration parameter `dirichlet_a`. If any chunk would exceed max_wc, the extra is capped and any
-    leftover is redistributed among chunks that have not reached their max.
-    
+    Helper function to distribute a total of R extra words among a number of chunks,
+    ensuring that no chunk receives more than extra_max extra words.
+
+    This function uses a Dirichlet distribution with concentration parameter `dirichlet_a`
+    to initially partition R among the chunks. If rounding causes any chunk to exceed the
+    per-chunk extra limit, the allocation is adjusted (with any surplus redistributed) until
+    the total extra exactly matches R.
+
     Args:
-        N (int): Total word count. Must be a positive integer.
-        min_wc (int): Minimum words per chunk. Must be a positive integer.
-        max_wc (int): Maximum words per chunk. Must be a positive integer and >= min_wc.
-        chunk_count_pref (float): A value in [0, 1] indicating the desired chunk count relative to the feasible range.
-                                  0 selects the minimum number of chunks; 1 selects the maximum number.
-        dirichlet_a (float): Dirichlet concentration parameter for extra word allocation. Higher values yield
-                             more uniform extras.
-    
+        num_chunks (int): Number of chunks.
+        R (int): Total extra words to distribute.
+        extra_max (int): Maximum extra words allowed per chunk.
+        dirichlet_a (float): Concentration parameter for the Dirichlet distribution.
+
     Returns:
-        Optional[List[int]]: A list of chunk sizes that sum to N, or None if there is an input error or no valid partition.
+        List[int]: A list of extra word counts for each chunk.
     """
-    
-    """ Input validation """
-    
-    if not isinstance(N, int) or N <= 0:
-        print("get_chunks: N must be a positive integer")
-        return None
-    if not isinstance(min_wc, int) or not isinstance(max_wc, int):
-        print("get_chunks: min_wc and max_wc must be integers")
-        return None
-    if min_wc <= 0 or max_wc <= 0:
-        print("get_chunks: min_wc and max_wc must be positive")
-        return None
-    if min_wc > max_wc:
-        print("get_chunks: min_wc cannot be greater than max_wc")
-        return None
-    if not isinstance(chunk_count_pref, float) or not (0.0 <= chunk_count_pref <= 1.0):
-        print("get_chunks: chunk_count_pref must be a float between 0 and 1")
-        return None
-    
-    """ Obtain number of chunks """
-
-    # Compute feasible range for number of chunks
-    i_lower = math.ceil(N / max_wc)
-    i_upper = N // min_wc
-    if i_lower > i_upper:
-        print("get_chunks: no possible number of chunks for the given N, min_wc, and max_wc")
-        return None
-
-    # Linear interpolation: 0 -> i_lower, 1 -> i_upper.
-    chosen_i = i_lower + round(chunk_count_pref * (i_upper - i_lower))
-
-    """ Partition N into chosen_i chunks with min_wc """
-    
-    # Give each chunk the minimum word count
-    base = [min_wc] * chosen_i
-    # Calculate remaining words to allocate
-    R = N - chosen_i * min_wc
-    # Maximum extra allowed per chunk
-    extra_max = max_wc - min_wc
-    
-    """ Allocate the remainder using Dirichlet distribution """
-
-    # Obtain a vector of floats that sum to R
-    extras_float = np.random.dirichlet([dirichlet_a] * chosen_i) * R
-    # Round each extra, capping at extra_max.
+    extras_float = np.random.dirichlet([dirichlet_a] * num_chunks) * R
     extras = [min(int(round(x)), extra_max) for x in extras_float]
     
-    # Adjust the extras to ensure the total sum is N.
     current_sum = sum(extras)
     while current_sum != R:
         if current_sum < R:
+            # If the current sum is too low, add one word to a chunk not at its cap.
             candidates = [j for j, val in enumerate(extras) if val < extra_max]
             delta = 1
         else:
+            # If the current sum is too high, remove one word from a chunk that has a nonzero extra.
             candidates = [j for j, val in enumerate(extras) if val > 0]
             delta = -1
         
@@ -95,47 +42,167 @@ def get_chunks(N: int,
         idx = random.choice(candidates)
         extras[idx] += delta
         current_sum += delta
-    
-    # Combine the base allocation with the extra allocation.
-    chunks = [base[j] + extras[j] for j in range(chosen_i)]
-    return chunks
+        
+    return extras
 
-def plot_chunks(chunks: List[int], N: int, min_wc: int, max_wc: int) -> None:
+def split_wc_into_chunks(total_wc: int, 
+                           min_wc: int, 
+                           max_wc: int, 
+                           chunk_count_pref: float = 0.5, 
+                           dirichlet_a: float = 5.0) -> Optional[List[int]]:
     """
-    Plots the list of chunk sizes as a sorted bar chart.
+    Split a total word count into chunks, with each chunk receiving a word count between min_wc and max_wc.
+    
+    The number of chunks is determined by linearly interpolating between the minimum and maximum feasible number 
+    of chunks (given by total_wc, min_wc, and max_wc) using the preference parameter chunk_count_pref 
+    (where 0 selects the fewest chunks and 1 selects the most).
+    
+    After initially assigning each chunk min_wc words, the remaining words (total_wc minus the base allocation)
+    are distributed among the chunks using a Dirichlet distribution with concentration parameter `dirichlet_a`.
+    Any extra allocation for a chunk is capped so that its total does not exceed max_wc.
     
     Args:
-        chunks (List[int]): The list of chunk sizes.
-        N (int): Total word count.
-        min_wc (int): Minimum word count per chunk.
-        max_wc (int): Maximum word count per chunk.
+        total_wc (int): Total word count to partition.
+        min_wc (int): Minimum words per chunk.
+        max_wc (int): Maximum words per chunk (must be >= min_wc).
+        chunk_count_pref (float): Preference in [0, 1] for selecting the number of chunks within the feasible range.
+        dirichlet_a (float): Dirichlet concentration parameter for extra word allocation.
+    
+    Returns:
+        Optional[List[int]]: A list of word counts for each chunk that sums to total_wc, or None if inputs are invalid.
     """
-    if not chunks:
-        print("plot_chunks: Empty chunk list provided")
-        return
+    if not isinstance(total_wc, int) or total_wc <= 0:
+        print("split_wc_into_chunks: total_wc must be a positive integer")
+        return None
+    if not isinstance(min_wc, int) or not isinstance(max_wc, int):
+        print("split_wc_into_chunks: min_wc and max_wc must be integers")
+        return None
+    if min_wc <= 0 or max_wc <= 0:
+        print("split_wc_into_chunks: min_wc and max_wc must be positive")
+        return None
+    if min_wc > max_wc:
+        print("split_wc_into_chunks: min_wc cannot be greater than max_wc")
+        return None
+    if not isinstance(chunk_count_pref, float) or not (0.0 <= chunk_count_pref <= 1.0):
+        print("split_wc_into_chunks: chunk_count_pref must be a float between 0 and 1")
+        return None
 
-    # Sort the chunks for a clearer view.
-    sorted_chunks = sorted(chunks)
+    # Determine the feasible range for the number of chunks.
+    min_chunks = math.ceil(total_wc / max_wc)
+    max_chunks = total_wc // min_wc
+    if min_chunks > max_chunks:
+        print("split_wc_into_chunks: no possible number of chunks for the given total_wc, min_wc, and max_wc")
+        return None
+
+    # Choose a number of chunks based on the linear interpolation.
+    chosen_chunks = min_chunks + round(chunk_count_pref * (max_chunks - min_chunks))
+
+    base_allocation = [min_wc] * chosen_chunks
+    remaining_words = total_wc - chosen_chunks * min_wc
+    extra_max = max_wc - min_wc
+
+    extras = _allocate_extras(chosen_chunks, remaining_words, extra_max, dirichlet_a)
+    chunks = [base_allocation[i] + extras[i] for i in range(chosen_chunks)]
+    return chunks
+
+def allocate_wc_to_chunks(num_chunks: int, 
+                            min_wc: int, 
+                            max_wc: int, 
+                            chunk_size_pref: float = 0.5,
+                            dirichlet_a: float = 5.0) -> Optional[List[int]]:
+    """
+    Allocate word counts to a fixed number of chunks, ensuring each chunk receives between min_wc and max_wc words.
     
-    # Plot the chunks distribution
-    plt.figure(figsize=(10, 6))
-    plt.bar(range(len(sorted_chunks)), sorted_chunks, color='skyblue')
-    plt.xlabel("Chunk Index (sorted)")
-    plt.ylabel("Word Count")
-    plt.title(f"Chunks Distribution\nTotal N = {N}, Min = {min_wc}, Max = {max_wc}, Chunks = {len(chunks)}")
-    plt.tight_layout()
-    plt.show()
-
-""" Example Usage """
-
-if __name__ == "__main__":
+    This function assumes that the number of chunks is predetermined and does not operate under a fixed total word count
+    budget. Each chunk is initially assigned min_wc words. Then, a total extra word count is randomly selected between 0 
+    and the maximum possible extra (i.e. (max_wc - min_wc) * num_chunks), and these extra words are distributed among 
+    the chunks using a Dirichlet distribution with concentration parameter `dirichlet_a`. Any allocation exceeding the 
+    per-chunk extra limit of (max_wc - min_wc) is capped, with any remainder redistributed until the total extra allocation 
+    matches the target.
     
-    N = 10000
-    min_wc = 50
-    max_wc = 300
+    Args:
+        num_chunks (int): The fixed number of chunks for allocation.
+        min_wc (int): Minimum words per chunk.
+        max_wc (int): Maximum words per chunk (must be >= min_wc).
+        chunk_size_pref (float): Preference in [0, 1] for selecting the total extra word count to be allocated.
+        dirichlet_a (float): Dirichlet concentration parameter; higher values yield more uniform extra allocations.
+    
+    Returns:
+        Optional[List[int]]: A list of allocated word counts for each chunk, or None if inputs are invalid.
+    """
+    if not isinstance(num_chunks, int) or num_chunks <= 0:
+        print("allocate_chunk_wc: num_chunks must be a positive integer")
+        return None
+    if not isinstance(min_wc, int) or not isinstance(max_wc, int):
+        print("allocate_chunk_wc: min_wc and max_wc must be integers")
+        return None
+    if min_wc <= 0 or max_wc <= 0:
+        print("allocate_chunk_wc: min_wc and max_wc must be positive")
+        return None
+    if min_wc > max_wc:
+        print("allocate_chunk_wc: min_wc cannot be greater than max_wc")
+        return None
 
-    chunks = get_chunks(N, min_wc, max_wc, chunk_count_pref=0.5, dirichlet_a=100.0)
-    if chunks is not None:
-        plot_chunks(chunks, N, min_wc, max_wc)
-    else:
-        print("No valid partition found.")
+    base_allocation = [min_wc] * num_chunks
+    extra_max = max_wc - min_wc
+    max_total_extra = extra_max * num_chunks
+
+    # Randomly choose a total extra word count between 0 and the maximum possible.
+    total_extra = int(round(chunk_size_pref * max_total_extra))
+    extras = _allocate_extras(num_chunks, total_extra, extra_max, dirichlet_a)
+    chunks = [base_allocation[i] + extras[i] for i in range(num_chunks)]
+    return chunks
+
+def get_chunks(rulebook: dict, collection_mode: str) -> Optional[List[dict]]:
+    
+    # Validate collection_mode.
+    if collection_mode not in ('word', 'chunk'):
+        print("get_chunks: Invalid collection_mode (must be 'word' or 'chunk').")
+        return None
+
+    # Generate chunks
+    all_chunks_dicts = []
+    TOTAL = rulebook['total']
+    
+    for topic_name, topic_dict in rulebook['content_rules'].items():
+            
+        # Get topic budget
+        topic_budget = int(TOTAL * topic_dict['total_proportion'])
+        
+        # Get sentiment budgets
+        for index, sentiment in enumerate(["positive", "neutral", "negative"]):
+            topic_sentiment_budget = int(topic_budget * topic_dict['sentiment_proportion'][index])
+            
+            # Skip if no word count
+            if topic_sentiment_budget == 0:
+                continue
+            
+            # Collection mode: 'word'
+            if collection_mode == 'word':
+                # Partition topic-sentiment word count into chunks
+                chunks = split_wc_into_chunks(
+                    total_wc=topic_sentiment_budget, 
+                    min_wc=topic_dict['chunk_min_wc'], 
+                    max_wc=topic_dict['chunk_max_wc'], 
+                    chunk_count_pref=topic_dict['chunk_pref'], 
+                    dirichlet_a=topic_dict['chunk_wc_distribution'])
+                
+            # Collection mode: 'chunk'
+            else:
+                # Allocate word count to topic-sentiment chunks
+                chunks = allocate_wc_to_chunks(
+                    num_chunks=topic_sentiment_budget, 
+                    min_wc=topic_dict['chunk_min_wc'], 
+                    max_wc=topic_dict['chunk_max_wc'], 
+                    chunk_size_pref=topic_dict['chunk_pref'], 
+                    dirichlet_a=topic_dict['chunk_wc_distribution'])
+
+            # Check if partitioning failed
+            if not chunks:
+                print(f"get_chunks: Partitioning fail - '{topic_name}' - '{sentiment}' - wc:{topic_sentiment_budget}.")
+                return None
+                
+            # Add chunks to all_chunks if partitioning succeeded
+            all_chunks_dicts.extend([{'topic': topic_name, 'sentiment': sentiment, 'wc': i} for i in chunks])
+            
+    return all_chunks_dicts
