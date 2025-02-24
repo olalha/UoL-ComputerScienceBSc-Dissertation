@@ -195,7 +195,7 @@ def write_rulebook_json(rulebook: dict) -> Optional[Path]:
     """
     try:
         # Create the JSON directory if it does not exist
-        json_dir = Path(__file__).parent.parent / "_data" / "rulebooks" / "json"
+        json_dir = Path(__file__).parent.parent / get_setting('PATH', 'rulebooks_json')
         json_dir.mkdir(parents=True, exist_ok=True)
         base_filename = f"{rulebook['review_item']} - {rulebook['collection_mode']} - {rulebook['total']}.json"
         json_path = json_dir / base_filename

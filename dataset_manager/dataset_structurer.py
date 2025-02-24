@@ -1,11 +1,9 @@
 from typing import Optional
 
-from utils.api_request import prompt_openai_llm_parallel
-from prompt_manager.prompt_builder import render_prompt
 from chunk_manager.chunk_partitioner import get_chunks
 from chunk_manager.chunk_aggregator import aggregate_chunks
 
-def generate_dataset_outline(rulebook: dict, solution_search_time_s: int) -> Optional[str]:
+def create_dataset_structure(rulebook: dict, solution_search_time_s: int) -> Optional[str]:
     
     # Validate rulebook
     if not rulebook or not isinstance(rulebook, dict):
@@ -22,8 +20,10 @@ def generate_dataset_outline(rulebook: dict, solution_search_time_s: int) -> Opt
     
     # Find best allocation of chunks to collections
     collection_ranges = rulebook['collection_ranges']
+    collection_mode = rulebook['collection_mode']
     solution = aggregate_chunks(chunks=all_chunks_dicts, 
-                                collections=collection_ranges, 
+                                collections=collection_ranges,
+                                collection_mode=collection_mode, 
                                 time_limit=solution_search_time_s)
     
     # Check if a solution was found
@@ -45,9 +45,9 @@ def generate_dataset_outline(rulebook: dict, solution_search_time_s: int) -> Opt
         collections.append(collection)
         
     # Update dataset outline metadata and return
-    return update_dataset_structure_metadata({'collections': collections})
+    return update_dataset_metadata({'collections': collections})
 
-def update_dataset_structure_metadata(dataset_outline: dict) -> Optional[dict]:
+def update_dataset_metadata(dataset_outline: dict) -> Optional[dict]:
     
     # Validate dataset outline
     if not dataset_outline or not isinstance(dataset_outline, dict):
@@ -120,72 +120,3 @@ def update_dataset_structure_metadata(dataset_outline: dict) -> Optional[dict]:
     updated_dataset_outline['collections'] = collections
     
     return updated_dataset_outline
-
-""" 
-NOTE:
-This function is not complete. 
-It is a placeholder for the actual function that will generate the dataset text.
-"""
-def generate_dataset_text(collections: list[list[dict]], review_item: str, model: str) -> Optional[str]:
-    
-    all_chunk_messages = []
-    all_chunk_messages_idx = 0
-    chunk_collection_map = {}
-    
-    for collection in collections:
-        for chunk in collection:
-            chunk_dict = chunk['chunk_dict']
-            
-            # Generate prompt
-            prompt_context = {
-                'review_item': review_item,
-                'topic': chunk_dict['topic'],
-                'sentiment': chunk_dict['sentiment'],
-                'word_count': chunk_dict['wc']
-            }
-            prompt = render_prompt("usr_chunk_gen.html", prompt_context)
-            messages = [{'role': 'user', 'content': prompt}]
-            
-            # Add the collection and chunk dict to the collection map
-            all_chunk_messages.append(messages)
-            chunk_collection_map[all_chunk_messages_idx] = {'collection': collection, 'chunk_dict': chunk_dict}
-            all_chunk_messages_idx += 1
-        
-    # Generate text for each chunk
-    responses = prompt_openai_llm_parallel(model=model, messages=all_chunk_messages)
-    
-    # Update all collections with generated text
-    for r in responses:
-        collection = chunk_collection_map[r['idx']]['collection']
-        chunk_dict = chunk_collection_map[r['idx']]['chunk_dict']
-        
-        # Extract generated text
-        generated_text = None
-        try:
-            generated_text = r['response']['choices'][0]['message']['content']
-        except Exception as e:
-            pass
-        
-        # Update collection with generated text
-        for chunk in collection:
-            if chunk['chunk_dict'] == chunk_dict:
-                if generated_text:
-                    chunk['generated_text'] = generated_text
-                else:
-                    print(f"generate_dataset: Failed to generate chunk: {chunk} - Removing from collection.")
-                    collection.remove(chunk)
-        
-    # Print all collections
-    for idx, collection in enumerate(collections):
-        # Remove collection if empty
-        if not collection:
-            print(f"generate_dataset: Removing empty collection.")
-            collections.remove(collection)
-            continue
-        # Print collection
-        print(f"\n\nCollection: {idx}\n{10*'-'}\n")
-        for chunk in collection:
-            print(f"Chunk_dict:\n{chunk['chunk_dict']}\n")
-            print(f"Generated_text:\n{chunk.get('generated_text', 'NOT GENERATED')}\n")
-                
-    return None

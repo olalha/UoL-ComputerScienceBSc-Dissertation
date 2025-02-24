@@ -68,7 +68,7 @@ async def _send_openai_request(json_content: dict, retries = OPENAI_RETRY_LIMIT)
             logger.error("Client error occurred: %s", e)
             return None
 
-def _validate_openai_response(response: Dict, messages: List[Dict]) -> Dict:
+async def _validate_openai_response(response: Dict, messages: List[Dict]) -> Dict:
     """
     Checks if the OpenAI API response indicates a failed request.
     
@@ -96,7 +96,7 @@ def _validate_openai_response(response: Dict, messages: List[Dict]) -> Dict:
     
     return {'success': True, 'messages': messages, 'response': response}
 
-def prompt_openai_llm_parallel(model: str, messages: List[List[Dict]]) -> List[Dict]:
+async def prompt_openai_llm_parallel(model: str, messages: List[List[Dict]]) -> List[Dict]:
     """
     Send prompts to the specified LLM model via OpenAI API in parallel.
     
@@ -108,21 +108,14 @@ def prompt_openai_llm_parallel(model: str, messages: List[List[Dict]]) -> List[D
        List[Dict]: A list of processed API responses. Each is a dictionary containing a success flag,
             the original message list, an index and the response dictionary.
     """
-    # Asynchronous wrapper function
-    async def async_wrapper():
-        
-        # Asynchronous request processing function
-        async def process_request(msg, idx):
-            response = await _send_openai_request({'model': model, 'messages': msg})
-            result = _validate_openai_response(response, msg)
-            result['idx'] = idx
-            return result
-        
-        # Asynchronously process all requests
-        tasks = [process_request(msg, idx) for idx, msg in enumerate(messages)]
-        return await asyncio.gather(*tasks)
+    async def process_request(msg, idx):
+        response = await _send_openai_request({'model': model, 'messages': msg})
+        result = await _validate_openai_response(response, msg)
+        result['idx'] = idx
+        return result
     
-    return asyncio.run(async_wrapper())
+    tasks = [process_request(msg, idx) for idx, msg in enumerate(messages)]
+    return await asyncio.gather(*tasks)
 
 def prompt_openai_llm_single(model: str, messages: List[Dict]) -> Dict:
     """
@@ -136,6 +129,11 @@ def prompt_openai_llm_single(model: str, messages: List[Dict]) -> Dict:
         Dict: A processed API response containing a success flag,
               the original message list, and the response dictionary.
     """
-    # Send the request and validate the response
-    response = asyncio.run(_send_openai_request({'model': model, 'messages': messages}))
-    return _validate_openai_response(response, messages)
+    # Asynchronous wrapper function
+    async def async_wrapper():
+        
+        # Get response from OpenAI API and validate
+        response = await _send_openai_request({'model': model, 'messages': messages})
+        return _validate_openai_response(response, messages)
+    
+    return asyncio.run(async_wrapper())

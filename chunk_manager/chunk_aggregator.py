@@ -55,7 +55,7 @@ def validate_collections(collections):
             if key not in collection:
                 print(f"validate_collections: Each collection must have '{key}'.")
                 return False
-        if not (isinstance(collection['range'], tuple) and len(collection['range']) == 2):
+        if not (isinstance(collection['range'], (tuple, list)) and len(collection['range']) == 2):
             print("validate_collections: Collection 'range' must be a tuple of two ints.")
             return False
         low, high = collection['range']

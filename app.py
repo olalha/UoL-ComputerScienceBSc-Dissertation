@@ -22,8 +22,15 @@ if 'stored_alert' not in st.session_state:
 rulebook_page = st.Page(
     page="views/rulebook_page.py",
     title="Rulebooks",
+    icon="📚"
+)
+
+dataset_page = st.Page(
+    page="views/dataset_page.py",
+    title="Datasets",
+    icon="📊"
 )
 
 # Setup navigation
-nav = st.navigation([rulebook_page])
+nav = st.navigation([rulebook_page, dataset_page])
 nav.run()

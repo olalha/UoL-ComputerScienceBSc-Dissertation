@@ -8,15 +8,20 @@ from pathlib import Path
 import pandas as pd
 
 from components.alert import show_alert
-from chunk_manager.rulebook_parser import parse_rulebook_excel, validate_rulebook_json
+from chunk_manager.rulebook_parser import parse_rulebook_excel, validate_rulebook_json, validate_rulebook_values
+from utils.settings_manager import get_setting
 
 # Display alert if it exists in session state
 if st.session_state.stored_alert:
     show_alert()
 
 # Directory to store JSON rulebooks
-JSON_DIR = Path(__file__).parent.parent / "_data" / "rulebooks" / "json"
+JSON_DIR = Path(__file__).parent.parent / get_setting('PATH', 'rulebooks_json')
 JSON_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_rulebooks_list():
+    # List only .json files in the JSON_DIR
+    return [f for f in os.listdir(JSON_DIR) if f.endswith('.json')]
 
 def process_file(uploaded_file):
     file_extension = Path(uploaded_file.name).suffix.lower()
@@ -46,10 +51,6 @@ def process_file(uploaded_file):
     
     return result_path, captured_output.getvalue()
 
-def get_rulebooks_list():
-    # List only .json files in the JSON_DIR
-    return [f for f in os.listdir(JSON_DIR) if f.endswith('.json')]
-
 def format_value(val):
     # Helper to format numeric values to two decimal places
     if isinstance(val, (float, int)):
@@ -63,7 +64,7 @@ st.title("Rulebooks")
 st.header("Upload a Rulebook")
 uploaded_file = st.file_uploader("Choose an Excel or JSON file", type=["xlsx", "xls", "json"])
 
-if st.button("Submit"):
+if st.button("Submit", icon="✅"):
     if uploaded_file is not None:
         with st.spinner("Processing file..."):
             result_path, console_output = process_file(uploaded_file)
@@ -112,56 +113,69 @@ if rulebooks:
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             rulebook_json = json.load(f)
+            
+        # Validate rulebook values
+        captured_output = io.StringIO()
+        with contextlib.redirect_stdout(captured_output):
+            valid = validate_rulebook_values(rulebook_json)
         
-        st.subheader("Rulebook Details")
-        # Display first three attributes in columns
-        col1, col2, col3 = st.columns(3)
-        col1.markdown(f"**Review Item:** {rulebook_json.get('review_item', '')}")
-        col2.markdown(f"**Collection Mode:** {rulebook_json.get('collection_mode', '')}")
-        col3.markdown(f"**Total:** {rulebook_json.get('total', '')}")
+        # Display rulebook details if valid
+        if valid:
+        
+            st.subheader(rulebook_json.get('review_item', ''))
+            # Display first three attributes in columns
+            col1, col2 = st.columns(2)
+            col1.metric(label="Collection Mode", value=rulebook_json.get('collection_mode', ''))
+            col2.metric(label="Total", value=rulebook_json.get('total', ''))
 
-        # Prepare content_rules table data with numeric formatting
-        st.markdown("### Content Rules")
-        table_data = []
-        for topic, details in rulebook_json.get("content_rules", {}).items():
-            sentiment = details.get("sentiment_proportion", [])
-            sentiment_str = ', '.join([f"{x:.2f}" for x in sentiment]) if sentiment else ""
-            row = {
-                "Topic": topic,
-                "Total Proportion": format_value(details.get("total_proportion")),
-                "Sentiment Proportion": sentiment_str,
-                "Chunk Min WC": details.get("chunk_min_wc"),
-                "Chunk Max WC": details.get("chunk_max_wc"),
-                "Chunk Pref": format_value(details.get("chunk_pref")),
-                "Chunk WC Distribution": format_value(details.get("chunk_wc_distribution"))
-            }
-            table_data.append(row)
-        df = pd.DataFrame(table_data)
-        df.index = range(1, len(df) + 1)
-        df.index.name = 'Rule Idx'
-        df_styled = df.style.set_properties(**{'text-align': 'center'})
-        st.write(df_styled)
+            # Prepare content_rules table data with numeric formatting
+            st.markdown("### Content Rules")
+            table_data = []
+            for topic, details in rulebook_json.get("content_rules", {}).items():
+                sentiment = details.get("sentiment_proportion", [])
+                sentiment_str = ', '.join([f"{x:.2f}" for x in sentiment]) if sentiment else ""
+                row = {
+                    "Topic": topic,
+                    "Total Proportion": format_value(details.get("total_proportion")),
+                    "Sentiment Proportion": sentiment_str,
+                    "Chunk Min WC": details.get("chunk_min_wc"),
+                    "Chunk Max WC": details.get("chunk_max_wc"),
+                    "Chunk Pref": format_value(details.get("chunk_pref")),
+                    "Chunk WC Distribution": format_value(details.get("chunk_wc_distribution"))
+                }
+                table_data.append(row)
+            df = pd.DataFrame(table_data)
+            df.index = range(1, len(df) + 1)
+            df.index.name = 'Rule Idx'
+            df_styled = df.style.set_properties(**{'text-align': 'center'})
+            st.dataframe(df_styled)
 
-        # Prepare collection ranges as a table
-        st.markdown("### Collection Ranges")
-        collection_ranges = rulebook_json.get("collection_ranges", [])
-        cr_table = []
-        for item in collection_ranges:
-            range_val = item.get("range", [])
-            if isinstance(range_val, (list, tuple)) and len(range_val) == 2:
-                start, end = range_val
-            else:
-                start, end = "", ""
-            cr_table.append({
-                "Range Start": start,
-                "Range End": end,
-                "Target Fraction": format_value(item.get("target_fraction"))
-            })
-        df_cr = pd.DataFrame(cr_table)
-        df_cr.index = range(1, len(df_cr) + 1)
-        df_cr.index.name = 'Rule Idx'
-        df_cr_styled = df_cr.style.set_properties(**{'text-align': 'center'})
-        st.write(df_cr_styled)
+            # Prepare collection ranges as a table
+            st.markdown("### Collection Ranges")
+            collection_ranges = rulebook_json.get("collection_ranges", [])
+            cr_table = []
+            for item in collection_ranges:
+                range_val = item.get("range", [])
+                if isinstance(range_val, (list, tuple)) and len(range_val) == 2:
+                    start, end = range_val
+                else:
+                    start, end = "", ""
+                cr_table.append({
+                    "Range Start": start,
+                    "Range End": end,
+                    "Target Fraction": format_value(item.get("target_fraction"))
+                })
+            df_cr = pd.DataFrame(cr_table)
+            df_cr.index = range(1, len(df_cr) + 1)
+            df_cr.index.name = 'Rule Idx'
+            df_cr_styled = df_cr.style.set_properties(**{'text-align': 'center'})
+            st.write(df_cr_styled)
+        
+        # Display error if validation fails
+        else:
+            st.error("Rulebook values are invalid - Please delete and re-upload the corrected rulebook.")
+            st.text_area("Console Output", captured_output.getvalue(), height=200)
+            
     except Exception as e:
         st.error(f"Error loading JSON: {e}")
 else:

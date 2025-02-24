@@ -1,5 +1,9 @@
 # SETTINGS FILE
 
+# Path settings
+PATH:
+  rulebooks_json: "_data/rulebooks/json"
+
 # OpenAI API settings
 OPENAI_API:
   retry_limit: 3
