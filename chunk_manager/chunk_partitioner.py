@@ -1,4 +1,3 @@
-
 import math
 import random
 from typing import Optional, List
@@ -153,16 +152,12 @@ def allocate_wc_to_chunks(num_chunks: int,
     chunks = [base_allocation[i] + extras[i] for i in range(num_chunks)]
     return chunks
 
-def get_chunks(rulebook: dict, collection_mode: str) -> Optional[List[dict]]:
-    
-    # Validate collection_mode.
-    if collection_mode not in ('word', 'chunk'):
-        print("get_chunks: Invalid collection_mode (must be 'word' or 'chunk').")
-        return None
+def get_chunks(rulebook: dict) -> Optional[List[dict]]:
 
     # Generate chunks
     all_chunks_dicts = []
     TOTAL = rulebook['total']
+    MODE = rulebook['collection_mode']
     
     for topic_name, topic_dict in rulebook['content_rules'].items():
             
@@ -178,7 +173,7 @@ def get_chunks(rulebook: dict, collection_mode: str) -> Optional[List[dict]]:
                 continue
             
             # Collection mode: 'word'
-            if collection_mode == 'word':
+            if MODE == 'word':
                 # Partition topic-sentiment word count into chunks
                 chunks = split_wc_into_chunks(
                     total_wc=topic_sentiment_budget, 

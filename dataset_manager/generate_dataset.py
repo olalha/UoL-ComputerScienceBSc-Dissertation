@@ -1,12 +1,11 @@
-
 from typing import Optional
 
 from utils.api_request import prompt_openai_llm_parallel
 from prompt_manager.prompt_builder import render_prompt
 from chunk_manager.chunk_partitioner import get_chunks
-from chunk_manager.chunk_aggregator import aggregate_chunks, visualize_chunk_aggregation
+from chunk_manager.chunk_aggregator import aggregate_chunks
 
-def generate_dataset_outline(rulebook: dict, collection_mode: str, solution_search_time_s: int) -> Optional[str]:
+def generate_dataset_outline(rulebook: dict, solution_search_time_s: int) -> Optional[str]:
     
     # Validate rulebook
     if not rulebook or not isinstance(rulebook, dict):
@@ -14,7 +13,7 @@ def generate_dataset_outline(rulebook: dict, collection_mode: str, solution_sear
         return None
     
     # Generate chunks
-    all_chunks_dicts = get_chunks(rulebook=rulebook, collection_mode=collection_mode)
+    all_chunks_dicts = get_chunks(rulebook=rulebook)
     
     # Check if partitioning failed
     if not all_chunks_dicts:
@@ -23,14 +22,16 @@ def generate_dataset_outline(rulebook: dict, collection_mode: str, solution_sear
     
     # Find best allocation of chunks to collections
     collection_ranges = rulebook['collection_ranges']
-    solution = aggregate_chunks(all_chunks_dicts, collection_ranges, collection_mode=collection_mode, time_limit=solution_search_time_s)
+    solution = aggregate_chunks(chunks=all_chunks_dicts, 
+                                collections=collection_ranges, 
+                                time_limit=solution_search_time_s)
     
     # Check if a solution was found
     if not solution:
         print("generate_dataset_outline: Failed to allocate chunks to collections.")
         return None
     
-    # Prepare dataset outline
+    # Prepare dataset structure
     collections = []
     for idx, item in enumerate(solution):
         collection = {'idx': idx, 'collection_wc': 0, 'collection_cc': 0, 'chunks': []}
@@ -44,9 +45,9 @@ def generate_dataset_outline(rulebook: dict, collection_mode: str, solution_sear
         collections.append(collection)
         
     # Update dataset outline metadata and return
-    return update_dataset_outline_metadata({'collections': collections})
+    return update_dataset_structure_metadata({'collections': collections})
 
-def update_dataset_outline_metadata(dataset_outline: dict) -> Optional[dict]:
+def update_dataset_structure_metadata(dataset_outline: dict) -> Optional[dict]:
     
     # Validate dataset outline
     if not dataset_outline or not isinstance(dataset_outline, dict):
@@ -119,7 +120,12 @@ def update_dataset_outline_metadata(dataset_outline: dict) -> Optional[dict]:
     updated_dataset_outline['collections'] = collections
     
     return updated_dataset_outline
-        
+
+""" 
+NOTE:
+This function is not complete. 
+It is a placeholder for the actual function that will generate the dataset text.
+"""
 def generate_dataset_text(collections: list[list[dict]], review_item: str, model: str) -> Optional[str]:
     
     all_chunk_messages = []

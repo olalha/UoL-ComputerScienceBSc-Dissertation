@@ -1,22 +1,24 @@
 import openpyxl
+import json
 from pathlib import Path
 from typing import Optional
 
 from utils.settings_manager import get_setting
 
-def parse_rulebook_excel(rulebook_name: str, collection_mode: str) -> Optional[dict]:
+def parse_rulebook_excel(file_path: Path) -> Optional[Path]:
     """
     Parses an Excel workbook defining the topic sentiment distribution for a text corpuse
     with additional parameters. This Excel workbook needs to follow the structure of the
     template workbook.
     
-    The work can be formatted in one of two ways based on the collection_mode parameter:
+    The workbook can be formatted in one of two ways based on the collection_mode parameter:
     - "word": Defines exact word count ranges for each topic-sentiment pair.
     - "chunk": Defines number of chunks for each topic-sentiment pair.
 
     This function loads an Excel workbook from the specified path and extracts:
       - 'review_item': from cell A1
-      - 'total': from cell F1 (must be an int > 0)
+      - 'collection_mode': either 'word' or 'chunk' from cell E1
+      - 'total': from cell G1 (must be an int > 0)
         - either defines total word count or number of chunks depending on collection_mode
       - 'content_rules': a dictionary mapping topic names to a dictionary containing:
           - 'total_proportion': float from col B
@@ -34,27 +36,14 @@ def parse_rulebook_excel(rulebook_name: str, collection_mode: str) -> Optional[d
 
     Args:
         rulebook_name (str): The file name of the Excel workbook, located in the "rulebooks" directory.
-        collection_mode (str): The mode for collection COLLECTION_RANGES, either "word" or "chunk".
 
     Returns:
-        Optional[dict]:
-            On success, returns a dictionary with keys:
-              - 'review_item'
-              - 'total'
-              - 'content_rules'
-              - 'collection_ranges'
-            Returns None if an error occurs.
+        Optional[Path]: Full path to the new JSON file on success.
+        None if a validation error occurs.
     """
     
-    # Validate collection_mode.
-    if collection_mode not in ('word', 'chunk'):
-        print("parse_rulebook_excel: Invalid collection_mode (must be 'word' or 'chunk').")
-        return None
-    
     try:
-        # Get the file path relative to the script location
-        file_path = Path(__file__).parent / "rulebooks" / rulebook_name
-
+        # Load the Excel workbook from the rulebooks directory
         if not file_path.exists():
             print(f"parse_rulebook_excel: File does not exist: {file_path}")
             return None
@@ -74,11 +63,17 @@ def parse_rulebook_excel(rulebook_name: str, collection_mode: str) -> Optional[d
         if not isinstance(review_item, str):
             print("parse_rulebook_excel: Invalid value in cell A1 for review_item.")
             return None
+        
+        # Retrieve collection_mode from cell E1 and validate it
+        collection_mode = ws['E1'].value
+        if collection_mode not in ('word', 'chunk'):
+            print("parse_rulebook_excel: Invalid value in cell E1 for collection_mode.")
+            return None
 
-        # Retrieve total from cell F1 and validate it
-        total = ws['F1'].value
+        # Retrieve total from cell G1 and validate it
+        total = ws['G1'].value
         if not isinstance(total, int) or total <= 0:
-            print("parse_rulebook_excel: Invalid value in cell F1 for total.")
+            print("parse_rulebook_excel: Invalid value in cell G1 for total.")
             return None
 
         content_rules = {}
@@ -246,13 +241,242 @@ def parse_rulebook_excel(rulebook_name: str, collection_mode: str) -> Optional[d
             print("parse_rulebook_excel: Sum of fractions in COLLECTION_RANGES sheet does not equal 1.")
             return None
 
-        return {
+        result = {
+            'collection_mode': collection_mode,
             'review_item': review_item,
             'total': total,
             'content_rules': content_rules,
             'collection_ranges': collection_ranges
         }
 
+        # Write result to JSON in root/_data/rulebooks/json directory
+        json_dir = Path(__file__).parent.parent / "_data" / "rulebooks" / "json"
+        json_dir.mkdir(parents=True, exist_ok=True)
+        base_filename = f"{review_item} - {collection_mode} - {total}.json"
+        json_path = Path(json_dir / base_filename)
+        counter = 1
+        while json_path.exists():
+            json_path = json_dir / f"{review_item} - {collection_mode} - {total} ({counter}).json"
+            counter += 1
+
+        try:
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(result, f, indent=4)
+        except Exception as write_err:
+            print(f"parse_rulebook_excel: Error writing JSON file: {write_err}")
+            return None
+
+        return json_path
+
     except Exception as e:
         print(f"parse_rulebook_excel: {e}")
+        return None
+
+def validate_rulebook_json(json_file_path: Path) -> Optional[Path]:
+    """
+    Validates a JSON file to ensure it follows the same structure and rules as produced by parse_rulebook_excel.
+    
+    The JSON file must have the following structure:
+      - review_item: a string
+      - collection_mode: either "word" or "chunk"
+      - total: an integer greater than 0
+      - content_rules: a dict mapping topic names to a dict with keys:
+            - total_proportion: a number between 0 and 1
+            - sentiment_proportion: a list or tuple of three numbers (each between 0 and 1) that sum to 1
+            - chunk_min_wc: an integer > 0
+            - chunk_max_wc: an integer greater than chunk_min_wc
+            - chunk_pref: a number between 0 and 1
+            - chunk_wc_distribution: a positive integer (validated here as a number > 0 that is integer-valued)
+      - collection_ranges: a list of dicts, each with:
+            - range: a list or tuple of two integers [start, end] where end >= start
+              and for each subsequent range the start must equal the previous end + 1.
+            - target_fraction: a number, and the sum of these fractions must equal 1.
+    
+    Args:
+        json_file_path (Path): Path to the JSON file to validate.
+        
+    Returns:
+        Optional[Path]: Full path to the new JSON file on success.
+        None if a validation error occurs.
+    """
+    try:
+        # Check if file exists and is a JSON file
+        if not json_file_path.exists():
+            print(f"validate_rulebook_json: File does not exist: {json_file_path}")
+            return None
+        if json_file_path.suffix.lower() != ".json":
+            print(f"validate_rulebook_json: File is not a JSON file: {json_file_path}")
+            return None
+
+        # Load the JSON data
+        with open(json_file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Check for required top-level keys
+        required_keys = {"review_item", "collection_mode", "total", "content_rules", "collection_ranges"}
+        for key in required_keys:
+            if key not in data:
+                print(f"validate_rulebook_json: Missing key '{key}' in JSON data.")
+                return None
+
+        # Validate review_item
+        review_item = data["review_item"]
+        if not isinstance(review_item, str):
+            print("validate_rulebook_json: 'review_item' must be a string.")
+            return None
+
+        # Validate collection_mode
+        collection_mode = data["collection_mode"]
+        if collection_mode not in ("word", "chunk"):
+            print("validate_rulebook_json: 'collection_mode' must be either 'word' or 'chunk'.")
+            return None
+
+        # Validate total
+        total = data["total"]
+        if not isinstance(total, int) or total <= 0:
+            print("validate_rulebook_json: 'total' must be an integer greater than 0.")
+            return None
+
+        # Validate content_rules
+        content_rules = data["content_rules"]
+        if not isinstance(content_rules, dict):
+            print("validate_rulebook_json: 'content_rules' must be a dictionary.")
+            return None
+
+        sum_total_proportion = 0.0
+        for topic, rule in content_rules.items():
+            if not isinstance(topic, str):
+                print("validate_rulebook_json: All keys in 'content_rules' must be strings.")
+                return None
+            if not isinstance(rule, dict):
+                print(f"validate_rulebook_json: The rule for topic '{topic}' must be a dictionary.")
+                return None
+
+            required_rule_keys = {
+                "total_proportion",
+                "sentiment_proportion",
+                "chunk_min_wc",
+                "chunk_max_wc",
+                "chunk_pref",
+                "chunk_wc_distribution"
+            }
+            for rkey in required_rule_keys:
+                if rkey not in rule:
+                    print(f"validate_rulebook_json: Missing key '{rkey}' in rule for topic '{topic}'.")
+                    return None
+
+            # total_proportion: numeric and between 0 and 1
+            total_proportion = rule["total_proportion"]
+            if not isinstance(total_proportion, (int, float)):
+                print(f"validate_rulebook_json: 'total_proportion' for topic '{topic}' must be numeric.")
+                return None
+            if not (0 <= total_proportion <= 1):
+                print(f"validate_rulebook_json: 'total_proportion' for topic '{topic}' must be between 0 and 1.")
+                return None
+            sum_total_proportion += total_proportion
+
+            # sentiment_proportion: list/tuple of three numbers in [0,1] that sum to 1
+            sentiment = rule["sentiment_proportion"]
+            if not isinstance(sentiment, (list, tuple)) or len(sentiment) != 3:
+                print(f"validate_rulebook_json: 'sentiment_proportion' for topic '{topic}' must be a list of three numbers.")
+                return None
+            for val in sentiment:
+                if not isinstance(val, (int, float)):
+                    print(f"validate_rulebook_json: All values in 'sentiment_proportion' for topic '{topic}' must be numeric.")
+                    return None
+                if not (0 <= val <= 1):
+                    print(f"validate_rulebook_json: Values in 'sentiment_proportion' for topic '{topic}' must be between 0 and 1.")
+                    return None
+            if abs(sum(sentiment) - 1) > 1e-9:
+                print(f"validate_rulebook_json: 'sentiment_proportion' values for topic '{topic}' do not sum to 1.")
+                return None
+
+            # chunk_min_wc: int > 0
+            chunk_min_wc = rule["chunk_min_wc"]
+            if not isinstance(chunk_min_wc, int) or chunk_min_wc <= 0:
+                print(f"validate_rulebook_json: 'chunk_min_wc' for topic '{topic}' must be an integer greater than 0.")
+                return None
+
+            # chunk_max_wc: int greater than chunk_min_wc
+            chunk_max_wc = rule["chunk_max_wc"]
+            if not isinstance(chunk_max_wc, int) or chunk_max_wc <= chunk_min_wc:
+                print(f"validate_rulebook_json: 'chunk_max_wc' for topic '{topic}' must be an integer greater than 'chunk_min_wc'.")
+                return None
+
+            # chunk_pref: numeric between 0 and 1
+            chunk_pref = rule["chunk_pref"]
+            if not isinstance(chunk_pref, (int, float)) or not (0 <= chunk_pref <= 1):
+                print(f"validate_rulebook_json: 'chunk_pref' for topic '{topic}' must be a numeric value between 0 and 1.")
+                return None
+
+            # chunk_wc_distribution: positive number
+            chunk_wc_distribution = rule["chunk_wc_distribution"]
+            if not isinstance(chunk_wc_distribution, (int, float)) or chunk_wc_distribution <= 0:
+                print(f"validate_rulebook_json: 'chunk_wc_distribution' for topic '{topic}' must be a positive number.")
+                return None
+
+        # Validate that the sum of total_proportion values equals 1
+        if abs(sum_total_proportion - 1) > 1e-9:
+            print("validate_rulebook_json: Sum of 'total_proportion' values in 'content_rules' does not equal 1.")
+            return None
+
+        # Validate collection_ranges
+        collection_ranges = data["collection_ranges"]
+        if not isinstance(collection_ranges, list):
+            print("validate_rulebook_json: 'collection_ranges' must be a list.")
+            return None
+
+        sum_target_fraction = 0.0
+        previous_end = None
+        for idx, range_dict in enumerate(collection_ranges):
+            if not isinstance(range_dict, dict):
+                print("validate_rulebook_json: Each item in 'collection_ranges' must be a dictionary.")
+                return None
+            if "range" not in range_dict or "target_fraction" not in range_dict:
+                print("validate_rulebook_json: Each item in 'collection_ranges' must contain 'range' and 'target_fraction'.")
+                return None
+
+            range_val = range_dict["range"]
+            if not isinstance(range_val, (list, tuple)) or len(range_val) != 2:
+                print("validate_rulebook_json: 'range' in collection_ranges must be a list or tuple of two integers.")
+                return None
+            start_val, end_val = range_val
+            if not (isinstance(start_val, int) and isinstance(end_val, int)):
+                print("validate_rulebook_json: 'range' values in collection_ranges must be integers.")
+                return None
+            if end_val < start_val:
+                print("validate_rulebook_json: In collection_ranges, end value must be greater than or equal to start value.")
+                return None
+            if previous_end is not None and start_val != previous_end + 1:
+                print(f"validate_rulebook_json: In collection_ranges at index {idx}, start value must be previous end + 1.")
+                return None
+            previous_end = end_val
+
+            target_fraction = range_dict["target_fraction"]
+            if not isinstance(target_fraction, (int, float)):
+                print("validate_rulebook_json: 'target_fraction' in collection_ranges must be numeric.")
+                return None
+            sum_target_fraction += target_fraction
+
+        if abs(sum_target_fraction - 1) > 1e-9:
+            print("validate_rulebook_json: Sum of 'target_fraction' values in collection_ranges does not equal 1.")
+            return None
+
+        # Write validated JSON in root/_data/rulebooks/json directory
+        json_dir = Path(__file__).parent.parent / "_data" / "rulebooks" / "json"
+        json_dir.mkdir(parents=True, exist_ok=True)
+        base_filename = f"{review_item} - {collection_mode} - {total}.json"
+        new_json_path = json_dir / base_filename
+        counter = 1
+        while new_json_path.exists():
+            new_json_path = json_dir / f"{review_item} - {collection_mode} - {total} ({counter}).json"
+            counter += 1
+
+        with open(new_json_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+
+        return new_json_path
+
+    except Exception as e:
+        print(f"validate_rulebook_json: {e}")
         return None
