@@ -3,6 +3,7 @@
 # Path settings
 PATH:
   rulebooks_json: "_data/rulebooks/json"
+  datasets_json: "_data/datasets/json"
 
 # OpenAI API settings
 OPENAI_API:

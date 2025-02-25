@@ -31,6 +31,11 @@ def validate_rulebook_values(rulebook: dict) -> bool:
     Returns:
         bool: True if the rulebook values are valid, False otherwise.
     """
+    # Validate the rulebook dictionary
+    if not rulebook or not isinstance(rulebook, dict):
+        print(f"validate_rulebook_values: Rulebook data is empty or not a dictionary.")
+        return False
+    
     # Validate top-level keys
     required_keys = {"review_item", "collection_mode", "total", "content_rules", "collection_ranges"}
     for key in required_keys:
