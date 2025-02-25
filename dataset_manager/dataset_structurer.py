@@ -86,7 +86,7 @@ def validate_and_update_dataset_meta(dataset_structure: dict) -> Optional[dict]:
     """
     
     # Validate dataset structure
-    if not is_valid_dataset_structure(dataset_structure):
+    if not validate_dataset_structure(dataset_structure):
         print(f"validate_and_update_dataset_meta: Invalid dataset_structure")
         return None
     
@@ -154,7 +154,7 @@ def validate_and_update_dataset_meta(dataset_structure: dict) -> Optional[dict]:
     
     return updated_dataset_structure
 
-def is_valid_dataset_structure(dataset_structure: dict) -> bool:
+def validate_dataset_structure(dataset_structure: dict) -> bool:
     """
     Validates that a dataset structure meets all required specifications.
 
@@ -172,94 +172,94 @@ def is_valid_dataset_structure(dataset_structure: dict) -> bool:
     
     # Check if dataset_structure is a dict
     if dict is None or not isinstance(dataset_structure, dict):
-        print("is_valid_dataset_structure: dataset_structure must be a dictionary and cannot be None")
+        print("validate_dataset_structure: dataset_structure must be a dictionary and cannot be None")
         return False
     
     # Check review_item exists and is a string
     if 'review_item' not in dataset_structure:
-        print("is_valid_dataset_structure: Missing 'review_item' key")
+        print("validate_dataset_structure: Missing 'review_item' key")
         return False
     if not isinstance(dataset_structure['review_item'], str):
-        print("is_valid_dataset_structure: 'review_item' must be a string")
+        print("validate_dataset_structure: 'review_item' must be a string")
         return False
     
     # Check collections exists and is a list
     if 'collections' not in dataset_structure:
-        print("is_valid_dataset_structure: Missing 'collections' key")
+        print("validate_dataset_structure: Missing 'collections' key")
         return False
     if not isinstance(dataset_structure['collections'], list):
-        print("is_valid_dataset_structure: 'collections' must be a list")
+        print("validate_dataset_structure: 'collections' must be a list")
         return False
     
     # Validate each collection
     for i, collection in enumerate(dataset_structure['collections']):
         if not isinstance(collection, dict):
-            print(f"is_valid_dataset_structure: Collection at index {i} must be a dictionary")
+            print(f"validate_dataset_structure: Collection at index {i} must be a dictionary")
             return False
         
         # Check full_text is None or string
         if 'full_text' not in collection:
-            print(f"is_valid_dataset_structure: Collection at index {i} missing 'full_text' key")
+            print(f"validate_dataset_structure: Collection at index {i} missing 'full_text' key")
             return False
         if collection['full_text'] is not None and not isinstance(collection['full_text'], str):
-            print(f"is_valid_dataset_structure: 'full_text' in collection {i} must be None or a string")
+            print(f"validate_dataset_structure: 'full_text' in collection {i} must be None or a string")
             return False
         
         # Check chunks exists and is a list
         if 'chunks' not in collection:
-            print(f"is_valid_dataset_structure: Collection at index {i} missing 'chunks' key")
+            print(f"validate_dataset_structure: Collection at index {i} missing 'chunks' key")
             return False
         if not isinstance(collection['chunks'], list):
-            print(f"is_valid_dataset_structure: 'chunks' in collection {i} must be a list")
+            print(f"validate_dataset_structure: 'chunks' in collection {i} must be a list")
             return False
         
         # Validate each chunk
         for j, chunk in enumerate(collection['chunks']):
             if not isinstance(chunk, dict):
-                print(f"is_valid_dataset_structure: Chunk at index {j} in collection {i} must be a dictionary")
+                print(f"validate_dataset_structure: Chunk at index {j} in collection {i} must be a dictionary")
                 return False
             
             # Check chunk_text is None or string
             if 'chunk_text' not in chunk:
-                print(f"is_valid_dataset_structure: Chunk at index {j} in collection {i} missing 'chunk_text' key")
+                print(f"validate_dataset_structure: Chunk at index {j} in collection {i} missing 'chunk_text' key")
                 return False
             if chunk['chunk_text'] is not None and not isinstance(chunk['chunk_text'], str):
-                print(f"is_valid_dataset_structure: 'chunk_text' in chunk {j} of collection {i} must be None or a string")
+                print(f"validate_dataset_structure: 'chunk_text' in chunk {j} of collection {i} must be None or a string")
                 return False
             
             # Check chunk_dict exists and is a dict
             if 'chunk_dict' not in chunk:
-                print(f"is_valid_dataset_structure: Chunk at index {j} in collection {i} missing 'chunk_dict' key")
+                print(f"validate_dataset_structure: Chunk at index {j} in collection {i} missing 'chunk_dict' key")
                 return False
             if not isinstance(chunk['chunk_dict'], dict):
-                print(f"is_valid_dataset_structure: 'chunk_dict' in chunk {j} of collection {i} must be a dictionary")
+                print(f"validate_dataset_structure: 'chunk_dict' in chunk {j} of collection {i} must be a dictionary")
                 return False
             
             chunk_dict = chunk['chunk_dict']
             
             # Check topic is a non-empty string
             if 'topic' not in chunk_dict:
-                print(f"is_valid_dataset_structure: Missing 'topic' in chunk_dict at collection {i}, chunk {j}")
+                print(f"validate_dataset_structure: Missing 'topic' in chunk_dict at collection {i}, chunk {j}")
                 return False
             if not isinstance(chunk_dict['topic'], str) or not chunk_dict['topic']:
-                print(f"is_valid_dataset_structure: 'topic' must be a non-empty string in collection {i}, chunk {j}")
+                print(f"validate_dataset_structure: 'topic' must be a non-empty string in collection {i}, chunk {j}")
                 return False
             
             # Check sentiment is one of the valid values
             if 'sentiment' not in chunk_dict:
-                print(f"is_valid_dataset_structure: Missing 'sentiment' in chunk_dict at collection {i}, chunk {j}")
+                print(f"validate_dataset_structure: Missing 'sentiment' in chunk_dict at collection {i}, chunk {j}")
                 return False
             valid_sentiments = ['positive', 'neutral', 'negative']
             if chunk_dict['sentiment'] not in valid_sentiments:
-                print(f"is_valid_dataset_structure: 'sentiment' must be one of {valid_sentiments} in collection {i}, chunk {j}")
+                print(f"validate_dataset_structure: 'sentiment' must be one of {valid_sentiments} in collection {i}, chunk {j}")
                 return False
             
             # Check wc is an int greater than 0
             if 'wc' not in chunk_dict:
-                print(f"is_valid_dataset_structure: Missing 'wc' in chunk_dict at collection {i}, chunk {j}")
+                print(f"validate_dataset_structure: Missing 'wc' in chunk_dict at collection {i}, chunk {j}")
                 return False
             if not isinstance(chunk_dict['wc'], int) or chunk_dict['wc'] <= 0:
-                print(f"is_valid_dataset_structure: 'wc' must be an integer greater than 0 in collection {i}, chunk {j}")
+                print(f"validate_dataset_structure: 'wc' must be an integer greater than 0 in collection {i}, chunk {j}")
                 return False
     
     # All validations passed
