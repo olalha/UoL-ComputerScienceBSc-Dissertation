@@ -11,7 +11,7 @@ from view_components.alert import show_alert
 from view_components.saved_items_selector import saved_items_selector
 from chunk_manager.rulebook_parser import parse_rulebook_excel, validate_rulebook_json, validate_rulebook_values
 from utils.settings_manager import get_setting
-from view_components.load_and_validate_json import load_and_validate_json # ADDED IMPORT
+from view_components.load_and_validate_json import load_and_validate_json
 
 # Display alert if it exists in session state
 if st.session_state.stored_alert:

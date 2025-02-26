@@ -95,6 +95,8 @@ def validate_and_update_dataset_meta(dataset_structure: dict) -> Optional[dict]:
     
     total_wc = 0
     total_cc = 0
+    chunks_with_text = 0
+    collections_with_text = 0
     collection_cc_distribution = {}
     sentiment_wc_distribution = {}
     sentiment_cc_distribution = {}
@@ -107,6 +109,7 @@ def validate_and_update_dataset_meta(dataset_structure: dict) -> Optional[dict]:
     for collection in collections:
         collection_wc = 0
         collection_cc = 0
+        chunk_text_count = 0
         
         for chunk in collection['chunks']:
             
@@ -116,6 +119,9 @@ def validate_and_update_dataset_meta(dataset_structure: dict) -> Optional[dict]:
             collection_cc += 1
             total_wc += chunk_dict['wc']
             total_cc += 1
+            
+            # Update text count metadata
+            chunk_text_count += 1 if chunk['chunk_text'] else 0
             
             # Update sentiment distribution
             sentiment = chunk_dict['sentiment']
@@ -136,6 +142,11 @@ def validate_and_update_dataset_meta(dataset_structure: dict) -> Optional[dict]:
         collection['collection_wc'] = collection_wc
         collection['collection_cc'] = collection_cc
         
+        # Update collection text count
+        chunks_with_text += chunk_text_count
+        if collection['full_text']:
+            collections_with_text += 1
+        
         # Update collection distribution
         collection_cc_distribution[collection_cc] = collection_cc_distribution.get(collection_cc, 0) + 1
         
@@ -143,6 +154,9 @@ def validate_and_update_dataset_meta(dataset_structure: dict) -> Optional[dict]:
     updated_dataset_structure['review_item'] = dataset_structure['review_item']
     updated_dataset_structure['total_wc'] = total_wc
     updated_dataset_structure['total_cc'] = total_cc
+    updated_dataset_structure['collections_count'] = len(collections)
+    updated_dataset_structure['chunks_with_text'] = chunks_with_text
+    updated_dataset_structure['collections_with_text'] = collections_with_text
     updated_dataset_structure['collection_cc_distribution'] = collection_cc_distribution
     updated_dataset_structure['sentiment_wc_distribution'] = sentiment_wc_distribution
     updated_dataset_structure['sentiment_cc_distribution'] = sentiment_cc_distribution
@@ -225,6 +239,11 @@ def validate_dataset_structure(dataset_structure: dict) -> bool:
                 return False
             if chunk['chunk_text'] is not None and not isinstance(chunk['chunk_text'], str):
                 print(f"validate_dataset_structure: 'chunk_text' in chunk {j} of collection {i} must be None or a string")
+                return False
+            
+            # Check full_text and chunk_text are consistent
+            if collection['full_text'] is not None and chunk['chunk_text'] is None:
+                print(f"validate_dataset_structure: Collection at index {i} has full_text but chunk at index {j} has no chunk_text")
                 return False
             
             # Check chunk_dict exists and is a dict
