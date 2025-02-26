@@ -3,7 +3,9 @@ import json
 import io
 import contextlib
 
-def load_and_validate_json(file_path, validation_function):
+from typing import Optional
+
+def load_and_validate_json(file_path: str, validation_function: callable) -> Optional[dict]:
     """ Loads a JSON file, validates it using the provided validation function. """
     captured_output = io.StringIO()
     try:
@@ -24,6 +26,7 @@ def load_and_validate_json(file_path, validation_function):
                 st.text_area("Console Output", captured_output.getvalue(), height=200)
                 return None
 
+    # Display an error message if loading fails
     except Exception as e:
         st.error(f"Error loading JSON: {e}")
         st.text_area("Console Output", captured_output.getvalue(), height=200)

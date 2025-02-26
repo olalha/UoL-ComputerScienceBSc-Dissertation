@@ -6,9 +6,10 @@ import tempfile
 import contextlib
 from pathlib import Path
 import pandas as pd
+from typing import Optional, Tuple, Union, Any
 
 from view_components.alert import show_alert
-from view_components.saved_items_selector import saved_items_selector
+from view_components.saved_items_selector import saved_items_selector, get_items_list
 from chunk_manager.rulebook_parser import parse_rulebook_excel, validate_rulebook_json, validate_rulebook_values
 from utils.settings_manager import get_setting
 from view_components.load_and_validate_json import load_and_validate_json
@@ -21,18 +22,20 @@ if st.session_state.stored_alert:
 RB_JSON_DIR = Path(__file__).parent.parent / get_setting('PATH', 'rulebooks_json')
 RB_JSON_DIR.mkdir(parents=True, exist_ok=True)
 
-def process_file(uploaded_file):
+def process_file(uploaded_file: Any) -> Tuple[Optional[Path], str]:
+    """ Process uploaded rulebook file and convert to JSON format. """
     file_extension = Path(uploaded_file.name).suffix.lower()
     
-    # Save uploaded file temporarily
+    # Save uploaded file to a temporary location
     with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp:
         tmp.write(uploaded_file.read())
         tmp_path = Path(tmp.name)
     
-    # Validate content and save to JSON
+    # Capture console output during processing
     captured_output = io.StringIO()
     result_path = None
     with contextlib.redirect_stdout(captured_output):
+        # Process based on file type
         if file_extension in ['.xlsx', '.xls', '.xlsm']:
             result_path = parse_rulebook_excel(tmp_path)
         elif file_extension == '.json':
@@ -41,7 +44,7 @@ def process_file(uploaded_file):
             st.error("Unsupported file type!")
             return None, captured_output.getvalue()
     
-        # Clean up the temporary file
+        # Clean up temporary file after processing
         try:
             tmp_path.unlink()
         except Exception as e:
@@ -49,81 +52,105 @@ def process_file(uploaded_file):
     
     return result_path, captured_output.getvalue()
 
-def format_value(val):
-    # Helper to format numeric values to two decimal places
-    if isinstance(val, (float, int)):
-        return f"{val:.2f}"
-    return val
-
-def handle_file_upload(uploaded_file):
-    """Handle the file upload process and show appropriate messages"""
-    if uploaded_file is not None:
-        with st.spinner("Processing file..."):
-            result_path, console_output = process_file(uploaded_file)
-            if console_output:
-                st.text_area("Console Output", console_output, height=200)
-            if result_path is None:
-                st.session_state.alert = {
-                    'type': 'error',
-                    'message': 'File processing failed. Check console output for details.'
-                }
-                st.error("File processing failed.")
-            else:
-                st.session_state.alert = {
-                    'type': 'success',
-                    'message': f"File processed successfully! Saved to {result_path}"
-                }
-                st.success(f"File processed successfully! Saved to {result_path}")
-    else:
-        st.error("Please upload a file first.")
-
-def display_rulebook_data(rulebook_json):
-    """Display rulebook data in a formatted way"""
+def upload_file_form() -> None:
+    """ Display file upload interface with processing functionality. """
     
-    # Display rulebook metadata and collection ranges
+    with st.expander("Import a rulebook from a file", icon="📁", expanded=True):
+        # File uploader component
+        uploaded_file = st.file_uploader("Choose an Excel or JSON file", type=["xlsx", "xls", "json"])
+
+        # Process the file when submitted
+        if st.button("Submit", icon="✅"):
+            if uploaded_file is not None:
+                with st.spinner("Processing file..."):
+                    # Process the uploaded file
+                    result_path, console_output = process_file(uploaded_file)
+                    # Display console output if any
+                    if console_output:
+                        st.text_area("Console Output", console_output, height=200)
+                    
+                    # Handle processing result
+                    if result_path is None:
+                        st.error("File processing failed.")
+                    else:
+                        st.success(f"File processed successfully! Saved to {result_path}")
+                        # Automatically select the newly uploaded file
+                        items = get_items_list(RB_JSON_DIR)
+                        new_file_name = result_path.name
+                        if new_file_name in items:
+                            st.session_state["Rulebook_index"] = items.index(new_file_name)
+            else:
+                st.error("Please upload a file first.")
+
+def display_rulebook_data(rulebook_json: dict) -> None:
+    """ Display rulebook data in a formatted way. """
+    
+    # Helper function to format numeric values
+    def format_value(val: Union[float, int, Any]) -> str:
+        if isinstance(val, (float, int)):
+            return f"{val:.2f}"
+        return val
+    
+    # Display rulebook metadata and collection ranges in a bordered container
     with st.container(border=True):
-        # Split into two main columns
+        # Split layout into two equal columns
         left_col, right_col = st.columns([1, 1])
         
+        # Extract collection mode with empty string as default
+        collection_mode = rulebook_json.get('collection_mode', '')
+        
+        # Display metadata in left column
         with left_col:
-            # Review Item at full width
+            # Display review item with full width
             st.metric(label="Review Item", value=rulebook_json.get('review_item', ''))
             
-            # Nested columns for Collection Mode and Total
+            # Create nested columns for collection mode and total
             mode_col, total_col = st.columns(2)
             with mode_col:
-                st.metric(label="Collection Mode", value=rulebook_json.get('collection_mode', ''))
+                st.metric(label="Collection Mode", value=collection_mode)
             with total_col:
                 st.metric(label="Total", value=rulebook_json.get('total', ''))
         
-        # Prepare collection ranges as a table
+        # Process collection ranges data for tabular display
         collection_ranges = rulebook_json.get("collection_ranges", [])
         cr_table = []
         for item in collection_ranges:
+            # Extract range values safely
             range_val = item.get("range", [])
             if isinstance(range_val, (list, tuple)) and len(range_val) == 2:
                 start, end = range_val
             else:
                 start, end = "", ""
+            
+            # Build table row with formatted values
             cr_table.append({
                 "Range Start": start,
                 "Range End": end,
                 "Target Fraction": format_value(item.get("target_fraction"))
             })
+        
+        # Create DataFrame from collection ranges data
         df_cr = pd.DataFrame(cr_table)
         if not df_cr.empty:
+            # Set target fraction as index for better display
             df_cr.set_index("Target Fraction", inplace=True)
             
+            # Display collection ranges in right column
             with right_col:
-                st.write("Collection Ranges")
+                st.write(f"Collection Ranges ({collection_mode} count)")
                 st.write(df_cr)
 
-    # Prepare content_rules table data with numeric formatting
+    # Display content rules section
     st.write("Content Rules")
+    
+    # Process content rules data for tabular display
     table_data = []
     for topic, details in rulebook_json.get("content_rules", {}).items():
+        # Format sentiment proportion values as comma-separated string
         sentiment = details.get("sentiment_proportion", [])
         sentiment_str = ', '.join([f"{x:.2f}" for x in sentiment]) if sentiment else ""
+        
+        # Build table row with topic details and formatted values
         row = {
             "Topic": topic,
             "Total Proportion": format_value(details.get("total_proportion")),
@@ -134,13 +161,19 @@ def display_rulebook_data(rulebook_json):
             "Chunk WC Distribution": format_value(details.get("chunk_wc_distribution"))
         }
         table_data.append(row)
+    
+    # Create DataFrame from content rules data
     df_ts = pd.DataFrame(table_data)
     if not df_ts.empty:
+        # Set topic as index for better organization
         df_ts.set_index("Topic", inplace=True)
+        # Display dataframe with content rules
         st.dataframe(df_ts)
-        
+    
+    # Add note about table scrollability
     st.write("Note: The Content Rules table is vertically scrollable.")
     
+    # Add expandable section for rulebook explanation
     with st.expander("Rulebook Explanation", icon="❔"):
         st.write("TODO: Add explanation here.")
 
@@ -148,17 +181,13 @@ def display_rulebook_data(rulebook_json):
 st.title("Rulebooks")
 
 # --- Upload Section ---
-st.subheader("Upload a Rulebook")
+st.header("Upload a Rulebook")
 
-# Display file upload form
-with st.expander("Import a rulebook from a file", icon="📁", expanded=True):
-    uploaded_file = st.file_uploader("Choose an Excel or JSON file", type=["xlsx", "xls", "json"])
-
-    if st.button("Submit", icon="✅"):
-        handle_file_upload(uploaded_file)
+# Display the file upload form
+upload_file_form()
 
 # --- Rulebook List & Display Section ---
-st.subheader("Saved Rulebooks")
+st.header("Saved Rulebooks")
 
 # Display rulebook selector
 selected_rulebook = saved_items_selector(RB_JSON_DIR, "Rulebook")
@@ -172,6 +201,7 @@ if selected_rulebook:
 
     # Display the rulebook data
     if rulebook_json:
+        st.markdown("---")
         st.info(f"{selected_rulebook}")
         display_rulebook_data(rulebook_json)
 else:

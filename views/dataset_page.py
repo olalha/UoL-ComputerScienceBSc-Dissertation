@@ -7,13 +7,26 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+from typing import Dict, List, Any, Optional, Union
 
 from view_components.alert import show_alert
-from view_components.saved_items_selector import saved_items_selector
+from view_components.saved_items_selector import saved_items_selector, get_items_list
 from view_components.load_and_validate_json import load_and_validate_json
 from utils.settings_manager import get_setting
 from chunk_manager.rulebook_parser import validate_rulebook_values
 from dataset_manager.dataset_structurer import create_dataset_structure, validate_and_update_dataset_meta
+
+# Chart styling constants
+SENTIMENT_COLORS = {
+    'positive': '#4CAF50', 
+    'neutral': '#2196F3', 
+    'negative': '#F44336',
+    'Unknown': '#9E9E9E'
+}
+CHART_ALPHA = 0.7
+EDGE_COLOR = '#808080'
+EDGE_WIDTH = 1
+GRID_ALPHA = 0.7
 
 # Display alert if it exists in session state
 if st.session_state.stored_alert:
@@ -31,12 +44,16 @@ RB_JSON_DIR.mkdir(parents=True, exist_ok=True)
 DS_JSON_DIR = Path(__file__).parent.parent / get_setting('PATH', 'datasets_json')
 DS_JSON_DIR.mkdir(parents=True, exist_ok=True)
 
-def get_rulebooks_list():
+def get_rulebooks_list() -> List[str]:
+    """ Get a list of validated rulebooks for dataset generation. """
+    
     all_rulebooks = [f for f in os.listdir(RB_JSON_DIR) if f.endswith('.json')]
     valid_rulebooks = []
     print("Datasets View: START SUBPROCESS - Get validated rulebooks for generation")
     for rulebook in all_rulebooks:
         file_path = RB_JSON_DIR / rulebook
+        
+        # Validate the rulebook
         with open(file_path, "r", encoding="utf-8") as f:
             if validate_rulebook_values(json.load(f)):
                 valid_rulebooks.append(rulebook)
@@ -45,9 +62,10 @@ def get_rulebooks_list():
     print("Datasets View: END SUBPROCESS - Get validated rulebooks for generation")
     return valid_rulebooks
 
-def generate_dataset_structure_form(rulebooks):
+def generate_dataset_structure_form(rulebooks: List[str]) -> None:
     """ Displays a form for generating dataset structures from rulebooks. """
     
+    # Display the form for generating dataset structure
     with st.expander("Generate Dataset From Rulebook", icon="📚", expanded=True):
         with st.form(key="generate_dataset_form", border=False):
             selected_rulebook = st.selectbox("Rulebook Selector", rulebooks)
@@ -83,67 +101,74 @@ def generate_dataset_structure_form(rulebooks):
         # Display dataset structure
         if result_path:
             st.success(f"File processed successfully! Saved to {result_path}")
+            # Automatically select the newly generated dataset
+            items = get_items_list(DS_JSON_DIR)
+            new_file_name = Path(result_path).name
+            if new_file_name in items:
+                st.session_state["Dataset_index"] = items.index(new_file_name)
         else:
             st.error("Failed to generate dataset structure. Please try again.")
             st.text_area("Console Output", captured_output.getvalue(), height=200)
 
-def display_dataset_metrics(dataset_json):
-    """Display comprehensive metrics and visualizations for the dataset."""
+def display_dataset_metrics(dataset_json: Dict[str, Any]) -> None:
+    """ Display comprehensive metrics and visualizations for the dataset. """
     
-    # Basic metrics in 5 columns
-    metrics_cols = st.columns(5)
-    with metrics_cols[0]:
-        st.metric("Total Words", dataset_json.get("total_wc", 0))
-    with metrics_cols[1]:
-        st.metric("Collections", dataset_json.get("collections_count", 0))
-    with metrics_cols[2]:
-        st.metric("Total Chunks", dataset_json.get("total_cc", 0))
-    with metrics_cols[3]:
-        total_chunks = dataset_json.get("total_cc", 0)
-        chunks_with_text = dataset_json.get("chunks_with_text", 0)
-        percentage = (chunks_with_text / total_chunks) * 100 if total_chunks else 0
-        st.metric("Chunks Text", f"{percentage:.1f}%")
-    with metrics_cols[4]:
-        total_collections = dataset_json.get("collections_count", 0)
-        collections_with_text = dataset_json.get("collections_with_text", 0)
-        percentage = (collections_with_text / total_collections) * 100 if total_collections else 0
-        st.metric("Collections Text",  f"{percentage:.1f}%")
+    with st.container(border=True):
+        st.subheader("Dataset Metrics")
+        # Basic metrics in 5 columns
+        metrics_cols = st.columns(5)
+        with metrics_cols[0]:
+            st.metric("Total Words", dataset_json.get("total_wc", 0))
+        with metrics_cols[1]:
+            st.metric("Collections", dataset_json.get("collections_count", 0))
+        with metrics_cols[2]:
+            st.metric("Total Chunks", dataset_json.get("total_cc", 0))
+        with metrics_cols[3]:
+            total_chunks = dataset_json.get("total_cc", 0)
+            chunks_with_text = dataset_json.get("chunks_with_text", 0)
+            percentage = (chunks_with_text / total_chunks) * 100 if total_chunks else 0
+            st.metric("Chunks Text", f"{percentage:.1f}%")
+        with metrics_cols[4]:
+            total_collections = dataset_json.get("collections_count", 0)
+            collections_with_text = dataset_json.get("collections_with_text", 0)
+            percentage = (collections_with_text / total_collections) * 100 if total_collections else 0
+            st.metric("Collections Text",  f"{percentage:.1f}%")
+                
+        # Collection Size Distribution (Stacked Bar Chart)
+        with st.expander("Collection Size Distribution", expanded=False, icon="📈"):
+            st.subheader("Collection Size Distribution")
+            tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
+            with tab1:
+                plot_size_distribution(dataset_json, by_chunks=True, category='collection')
+                
+            with tab2:
+                plot_size_distribution(dataset_json, by_chunks=False, category='collection')
+        
+        # Topic Coverage Distribution (Stacked Bar Chart)
+        with st.expander("Topic Coverage Distribution", expanded=False, icon="💬"):
+            st.subheader("Topic Coverage Distribution")
+            tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
+            with tab1:
+                plot_size_distribution(dataset_json, by_chunks=True, category='topic')
+                
+            with tab2:
+                plot_size_distribution(dataset_json, by_chunks=False, category='topic')
+        
+        # Overall Sentiment Distribution (Pie Charts and Box Plot)
+        with st.expander("Overall Sentiment Distribution", expanded=False, icon="😃"):
+            st.subheader("Overall Sentiment Distribution")
+            tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
+            with tab1:
+                plot_sentiment_pie_chart(dataset_json, by_chunks=True)
+            with tab2:
+                plot_sentiment_pie_chart(dataset_json, by_chunks=False)
             
-    # Collection Size Distribution (Stacked Bar Chart)
-    with st.expander("Collection Size Distribution", expanded=False):
-        st.subheader("Collection Size Distribution")
-        tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
-        with tab1:
-            plot_size_distribution(dataset_json, by_chunks=True, category='collection')
-            
-        with tab2:
-            plot_size_distribution(dataset_json, by_chunks=False, category='collection')
-    
-    # Topic Coverage Distribution (Stacked Bar Chart)
-    with st.expander("Topic Coverage Distribution", expanded=False):
-        st.subheader("Topic Coverage Distribution")
-        tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
-        with tab1:
-            plot_size_distribution(dataset_json, by_chunks=True, category='topic')
-            
-        with tab2:
-            plot_size_distribution(dataset_json, by_chunks=False, category='topic')
-    
-    # Overall Sentiment Distribution (Pie Charts and Box Plot)
-    with st.expander("Overall Sentiment Distribution", expanded=False):
-        st.subheader("Overall Sentiment Distribution")
-        tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
-        with tab1:
-            plot_sentiment_pie_chart(dataset_json, by_chunks=True)
-        with tab2:
-            plot_sentiment_pie_chart(dataset_json, by_chunks=False)
-         
-    # Word Count Distribution by Chunk (Box Plot)
-    with st.expander("Word Count Distribution by Chunk", expanded=False):
-        st.subheader("Word Count Distribution by Chunk")
-        plot_sentiment_box_plot(dataset_json)
+        # Word Count Distribution by Chunk (Box Plot)
+        with st.expander("Word Count Distribution by Chunk", expanded=False, icon="📊"):
+            st.subheader("Word Count Distribution by Chunk")
+            plot_sentiment_box_plot(dataset_json)
 
-def plot_size_distribution(dataset_json, by_chunks=True, category='collection'):
+def plot_size_distribution(dataset_json: Dict[str, Any], by_chunks: bool = True, category: str = 'collection') -> None:
     """
     Plot a stacked bar chart showing sentiment distribution by either topic or collection.
     
@@ -157,20 +182,15 @@ def plot_size_distribution(dataset_json, by_chunks=True, category='collection'):
         st.info("No data available for chart.")
         return
     
-    # Define sentiment colors (consistent across all charts)
-    sentiment_colors = {
-        'positive': '#4CAF50', 
-        'neutral': '#2196F3', 
-        'negative': '#F44336'
-    }
+    # Initialize variables for data processing
+    data = {}
+    x_labels = []
+    x_title = ""
     
     if category == 'topic':
-        # --- Topic-based chart ---
-        # Get distribution data
-        if by_chunks:
-            distribution = dataset_json.get("ts_cc_distribution", {})
-        else:
-            distribution = dataset_json.get("ts_wc_distribution", {})
+        # --- Topic-based chart data processing ---
+        # Get distribution data based on count type
+        distribution = dataset_json.get(f"ts_{'cc' if by_chunks else 'wc'}_distribution", {})
         
         if not distribution:
             st.info(f"No {'chunk' if by_chunks else 'word'} count distribution data available by topic.")
@@ -179,7 +199,7 @@ def plot_size_distribution(dataset_json, by_chunks=True, category='collection'):
         # Group data by topic and sentiment
         topic_sentiment = {}
         
-        # Process data
+        # Process the topic-sentiment distribution data
         for key, value in distribution.items():
             parts = key.split(" - ")
             if len(parts) == 2:
@@ -188,21 +208,23 @@ def plot_size_distribution(dataset_json, by_chunks=True, category='collection'):
                     topic_sentiment[topic] = {"positive": 0, "neutral": 0, "negative": 0}
                 topic_sentiment[topic][sentiment] = value
         
-        # Sort topics by total size
+        # Sort topics by total size (descending)
         topics = list(topic_sentiment.keys())
         topic_totals = {topic: sum(values.values()) for topic, values in topic_sentiment.items()}
         topics.sort(key=lambda x: topic_totals[x], reverse=True)
         
-        # Create arrays for plotting
-        pos_vals = [topic_sentiment[topic]["positive"] for topic in topics]
-        neu_vals = [topic_sentiment[topic]["neutral"] for topic in topics]
-        neg_vals = [topic_sentiment[topic]["negative"] for topic in topics]
+        # Extract data for plotting
+        data = {
+            "pos_vals": [topic_sentiment[topic]["positive"] for topic in topics],
+            "neu_vals": [topic_sentiment[topic]["neutral"] for topic in topics],
+            "neg_vals": [topic_sentiment[topic]["negative"] for topic in topics]
+        }
         
         x_labels = topics
         x_title = "Topics"
     
     elif category == 'collection':
-        # --- Collection-based chart ---
+        # --- Collection-based chart data processing ---
         collections = dataset_json.get("collections", [])
         if not collections:
             st.info("No collections data available for chart.")
@@ -211,10 +233,12 @@ def plot_size_distribution(dataset_json, by_chunks=True, category='collection'):
         # Group collections by sentiment
         collection_sentiment = {}
         
+        # Process each collection's chunk data
         for i, collection in enumerate(collections):
             collection_id = f"Collection {i+1}"
             collection_sentiment[collection_id] = {"positive": 0, "neutral": 0, "negative": 0, "Unknown": 0}
             
+            # Process chunks within each collection
             chunks = collection.get("chunks", [])
             for chunk in chunks:
                 chunk_dict = chunk.get("chunk_dict", {})
@@ -227,46 +251,49 @@ def plot_size_distribution(dataset_json, by_chunks=True, category='collection'):
                     # Sum word counts
                     collection_sentiment[collection_id][sentiment] += chunk_dict.get("wc", 0)
         
-        # Sort collections by total size
+        # Sort collections by total size (descending)
         collection_ids = list(collection_sentiment.keys())
         collection_totals = {cid: sum(values.values()) for cid, values in collection_sentiment.items()}
         collection_ids.sort(key=lambda x: collection_totals[x], reverse=True)
         
-        # Create arrays for plotting
-        pos_vals = [collection_sentiment[cid].get("positive", 0) for cid in collection_ids]
-        neu_vals = [collection_sentiment[cid].get("neutral", 0) for cid in collection_ids]
-        neg_vals = [collection_sentiment[cid].get("negative", 0) for cid in collection_ids]
+        # Extract data for plotting
+        data = {
+            "pos_vals": [collection_sentiment[cid].get("positive", 0) for cid in collection_ids],
+            "neu_vals": [collection_sentiment[cid].get("neutral", 0) for cid in collection_ids],
+            "neg_vals": [collection_sentiment[cid].get("negative", 0) for cid in collection_ids]
+        }
         
-        # Display all collections
         x_labels = collection_ids
         x_title = "Collections"
     
     # Create the stacked bar chart
     fig, ax = plt.subplots(figsize=(6, 4))
     
-    # Set up x positions
+    # Set up x positions for bars
     x = np.arange(len(x_labels))
     
-    # Create stacked bars
-    ax.bar(x, pos_vals, label='Positive', color=sentiment_colors['positive'], alpha=0.7)
-    ax.bar(x, neu_vals, bottom=pos_vals, label='Neutral', color=sentiment_colors['neutral'], alpha=0.7)
+    # Create stacked bars for sentiments
+    ax.bar(x, data["pos_vals"], label='Positive', color=SENTIMENT_COLORS['positive'], alpha=CHART_ALPHA)
+    ax.bar(x, data["neu_vals"], bottom=data["pos_vals"], label='Neutral', color=SENTIMENT_COLORS['neutral'], alpha=CHART_ALPHA)
     
-    # Calculate the bottom position for negative values
-    bottom_pos = [pos_vals[i] + neu_vals[i] for i in range(len(pos_vals))]
-    ax.bar(x, neg_vals, bottom=bottom_pos, label='Negative', color=sentiment_colors['negative'], alpha=0.7)
+    # Calculate the bottom position for negative values and add them
+    bottom_pos = [data["pos_vals"][i] + data["neu_vals"][i] for i in range(len(data["pos_vals"]))]
+    ax.bar(x, data["neg_vals"], bottom=bottom_pos, label='Negative', color=SENTIMENT_COLORS['negative'], alpha=CHART_ALPHA)
     
-    # Set labels and title
+    # Set chart labels and title
     metric_type = 'Chunks' if by_chunks else 'Words'
     ax.set_xlabel(x_title)
     ax.set_ylabel(f'Count ({metric_type})')
     
-    # Format x-axis ticks
+    # Set x-axis ticks
     ax.set_xticks(x)
     
-    # Set x-axis labels
+    # Format x-axis labels based on category
     if category == 'collection':
+        # For collections, hide labels to avoid overcrowding
         ax.set_xticklabels([""] * len(x_labels))
     else:
+        # For topics, truncate long labels
         truncated_labels = [label[:20] + "..." if len(label) > 20 else label for label in x_labels]
         if len(x_labels) > 8:
             # Rotate labels for better readability when there are many
@@ -274,64 +301,75 @@ def plot_size_distribution(dataset_json, by_chunks=True, category='collection'):
         else:
             ax.set_xticklabels(truncated_labels)
     
-    # Add legend, grid and layout adjustments
+    # Add legend and adjust layout
     ax.legend()
     plt.tight_layout()
     
     # Display the chart
     st.pyplot(fig)
 
-def plot_sentiment_pie_chart(dataset_json, by_chunks=True):
-    """Plot pie chart showing sentiment distribution by either chunk count or word count."""
-    
-    if by_chunks:
-        sentiment_data = dataset_json.get("sentiment_cc_distribution", {})
-    else:
-        sentiment_data = dataset_json.get("sentiment_wc_distribution", {})
-    
-    # Check if data is available
-    if sentiment_data:
-        
-        # Create the pie chart
-        fig, ax = plt.subplots(figsize=(6, 4))
-        labels = list(sentiment_data.keys())
-        sizes = list(sentiment_data.values())
-        
-        # Define colors for sentiments
-        colors = {'positive': '#4CAF50', 'neutral': '#2196F3', 'negative': '#F44336'}
-        pie_colors = [colors.get(label, '#9E9E9E') for label in labels]
-        
-        # Plot the pie chart
-        ax.pie(sizes, labels=None, autopct='%1.1f%%', colors=pie_colors,  wedgeprops={'alpha': 0.7, 'edgecolor': '#808080', 'linewidth': 1})
-        
-        # Create legend labels with values
-        legend_labels = [f"{label} ({value})" for label, value in sentiment_data.items()]
-        
-        # Add total value to legend
-        total = sum(sentiment_data.values())
-        legend_labels.append(f"Total: {total}")
-        
-        # Create legend
-        ax.legend(legend_labels, loc="center right", bbox_to_anchor=(1.4, 0.5))
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-    else:
-        st.info("No sentiment distribution data available for pie chart.")
-
-def plot_sentiment_box_plot(dataset_json):
+def plot_sentiment_pie_chart(dataset_json: Dict[str, Any], by_chunks: bool = True) -> None:
     """
-    Plot a box plot representing the distribution of counts grouped by sentiment.
+    Plot pie chart showing sentiment distribution by either chunk count or word count.
     
     Args:
         dataset_json: The dataset JSON object
-        by_chunks: If False (default), show word count distribution; 
-                   If True, show chunk count distribution
+        by_chunks: If True, use chunk count; otherwise use word count
     """
+    # Get the appropriate sentiment distribution data
+    sentiment_data = dataset_json.get(f"sentiment_{'cc' if by_chunks else 'wc'}_distribution", {})
     
+    # Check if data is available
+    if not sentiment_data:
+        st.info(f"No {'chunk' if by_chunks else 'word'} count sentiment distribution data available.")
+        return
+        
+    # Create the pie chart
+    fig, ax = plt.subplots(figsize=(6, 4))
+    labels = list(sentiment_data.keys())
+    sizes = list(sentiment_data.values())
+    
+    # Get colors for each sentiment label
+    pie_colors = [SENTIMENT_COLORS.get(label, SENTIMENT_COLORS['Unknown']) for label in labels]
+    
+    # Plot the pie chart
+    ax.pie(
+        sizes, 
+        labels=None, 
+        autopct='%1.1f%%', 
+        colors=pie_colors,  
+        wedgeprops={
+            'alpha': CHART_ALPHA, 
+            'edgecolor': EDGE_COLOR, 
+            'linewidth': EDGE_WIDTH
+        }
+    )
+    
+    # Create legend labels with values
+    legend_labels = [f"{label} ({value})" for label, value in sentiment_data.items()]
+    
+    # Add total value to legend
+    total = sum(sentiment_data.values())
+    legend_labels.append(f"Total: {total}")
+    
+    # Add legend to chart
+    ax.legend(legend_labels, loc="center right", bbox_to_anchor=(1.4, 0.5))
+    
+    plt.tight_layout()
+    st.pyplot(fig)
+
+def plot_sentiment_box_plot(dataset_json: Dict[str, Any]) -> None:
+    """ 
+    Plot a box plot representing the word count distribution of chunks grouped by sentiment. 
+    
+    Args:
+        dataset_json: The dataset JSON object
+    """
+    # Extract chunk data from collections
     chunks_data = []
     collections = dataset_json.get("collections", [])
     
+    # Process each collection's chunks to gather sentiment-based word count data
     for collection in collections:
         chunks = collection.get("chunks", [])
         for chunk in chunks:
@@ -339,7 +377,7 @@ def plot_sentiment_box_plot(dataset_json):
             wc = chunk_dict.get("wc", 0)
             sentiment = chunk_dict.get("sentiment", "Unknown")
             
-            # Use actual word count for word-based analysis
+            # Only include chunks that have word counts
             if wc > 0:
                 chunks_data.append({
                     'count': wc,
@@ -347,38 +385,39 @@ def plot_sentiment_box_plot(dataset_json):
                 })
     
     # Check if data is available
-    if chunks_data:
-        df = pd.DataFrame(chunks_data)
-        
-        # Define the sentiment order for plotting
-        sentiment_order = ['positive', 'neutral', 'negative', 'All']
-        available_sentiments = [s for s in sentiment_order if s in df['sentiment'].unique() or s == 'All']
-        
-        # Prepare data for the box plot
-        data_to_plot = [df.loc[df['sentiment'] == s, 'count'] if s != 'All' else df['count'] for s in available_sentiments]
-        
-        # Create the box plot
-        fig, ax = plt.subplots(figsize=(6, 4))
-        box = ax.boxplot(data_to_plot, labels=available_sentiments, patch_artist=True)
-        
-        # Customize box colors based on sentiment
-        colors = {'positive': '#4CAF50', 'neutral': '#2196F3', 'negative': '#F44336', 'All': '#9E9E9E'}
-        for patch, sentiment in zip(box['boxes'], available_sentiments):
-            patch.set_facecolor(colors.get(sentiment, '#9E9E9E'))
-            patch.set_alpha(0.7)
-        
-        # Make the borders thinner and lighter
-        for element in ['whiskers', 'medians', 'caps']:
-            plt.setp(box[element], color='#696969', linewidth=1)
-        
-        # Set axis labels and add grid
-        ax.set_ylabel('Word Count')
-        ax.grid(True, linestyle='--', alpha=0.7)
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-    else:
+    if not chunks_data:
         st.info("No word count data available for box plot.")
+        return
+        
+    # Create DataFrame for analysis
+    df = pd.DataFrame(chunks_data)
+    
+    # Define the sentiment order for plotting
+    sentiment_order = ['positive', 'neutral', 'negative', 'All']
+    available_sentiments = [s for s in sentiment_order if s in df['sentiment'].unique() or s == 'All']
+    
+    # Prepare data for the box plot - group by sentiment
+    data_to_plot = [df.loc[df['sentiment'] == s, 'count'] if s != 'All' else df['count'] for s in available_sentiments]
+    
+    # Create the box plot
+    fig, ax = plt.subplots(figsize=(6, 4))
+    box = ax.boxplot(data_to_plot, labels=available_sentiments, patch_artist=True)
+    
+    # Customize box colors based on sentiment
+    for patch, sentiment in zip(box['boxes'], available_sentiments):
+        patch.set_facecolor(SENTIMENT_COLORS.get(sentiment, SENTIMENT_COLORS['Unknown']))
+        patch.set_alpha(CHART_ALPHA)
+    
+    # Make the borders thinner and lighter
+    for element in ['whiskers', 'medians', 'caps']:
+        plt.setp(box[element], color='#696969', linewidth=EDGE_WIDTH)
+    
+    # Set axis labels and add grid
+    ax.set_ylabel('Word Count')
+    ax.grid(True, linestyle='--', alpha=GRID_ALPHA)
+    
+    plt.tight_layout()
+    st.pyplot(fig)
 
 # --- Streamlit Page Layout ---
 st.title("Datasets")
@@ -408,7 +447,6 @@ if selected_dataset:
     # Display dataset content
     if dataset_json:
         st.markdown("---")
-        st.subheader("Dataset Metrics")
         st.info(f"{selected_dataset}")
         
         # Call the modularized function to display metrics
