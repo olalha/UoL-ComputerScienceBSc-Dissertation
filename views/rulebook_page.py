@@ -78,7 +78,7 @@ def upload_file_form() -> None:
                         items = get_items_list(RB_JSON_DIR)
                         new_file_name = result_path.name
                         if new_file_name in items:
-                            st.session_state["Rulebook_index"] = items.index(new_file_name)
+                            st.session_state["Rulebook_selected"] = new_file_name
             else:
                 st.error("Please upload a file first.")
 

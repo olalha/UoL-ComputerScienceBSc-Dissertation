@@ -50,18 +50,15 @@ def saved_items_selector(directory: Path, item_type: str) -> Optional[str]:
     """ Display the saved items selector and handle delete/rename actions. """
     items = get_items_list(directory)
     
-    # Display the selector if items are found
     if items:
         with st.container(border=True):
-            # Get the index of the previously selected item
+            # Use stored filename to determine the default index
             default_index = 0
-            if f"{item_type}_index" in st.session_state:
-                default_index = st.session_state[f"{item_type}_index"]
-                # Ensure the index is still valid
-                if default_index >= len(items):
-                    default_index = 0
+            if f"{item_type}_selected" in st.session_state:
+                stored_item = st.session_state[f"{item_type}_selected"]
+                if stored_item in items:
+                    default_index = items.index(stored_item)
 
-            # Display the selector
             st.subheader(f"{item_type.capitalize()} Selector")
             selected_item = st.selectbox(
                 f"Selected {item_type}",
@@ -69,16 +66,17 @@ def saved_items_selector(directory: Path, item_type: str) -> Optional[str]:
                 key=f"{item_type}_selector",
                 index=default_index
             )
+
+            # Update the session state with the selected file name
+            st.session_state[f"{item_type}_selected"] = selected_item
             
             if selected_item:
-                # Save the index of the selected item to session state
-                st.session_state[f"{item_type}_index"] = items.index(selected_item)
-
                 # Display the delete button
                 if st.button(f"Delete {item_type}", key=f"delete_{item_type}", icon="❌"):
                     if delete_item(directory, selected_item):
-                        # remove the index if the item is deleted
-                        del st.session_state[f"{item_type}_index"]
+                        # Remove the stored selection if the item is deleted
+                        if f"{item_type}_selected" in st.session_state:
+                            del st.session_state[f"{item_type}_selected"]
                         st.rerun()
 
                 # Display the rename form
@@ -89,6 +87,8 @@ def saved_items_selector(directory: Path, item_type: str) -> Optional[str]:
                 
                 if submitted:
                     if rename_item(directory, selected_item, current_name, new_name):
+                        # Update the stored selection with the new filename
+                        st.session_state[f"{item_type}_selected"] = f"{new_name}.json"
                         st.rerun()
 
             return selected_item

@@ -105,32 +105,32 @@ def generate_dataset_structure_form(rulebooks: List[str]) -> None:
             items = get_items_list(DS_JSON_DIR)
             new_file_name = Path(result_path).name
             if new_file_name in items:
-                st.session_state["Dataset_index"] = items.index(new_file_name)
+                st.session_state["Dataset_selected"] = new_file_name
         else:
             st.error("Failed to generate dataset structure. Please try again.")
             st.text_area("Console Output", captured_output.getvalue(), height=200)
 
-def display_dataset_metrics(dataset_json: Dict[str, Any]) -> None:
+def display_dataset_metrics(dataset: Dict[str, Any]) -> None:
     """ Display comprehensive metrics and visualizations for the dataset. """
     
+    st.subheader("Dataset Metrics")
     with st.container(border=True):
-        st.subheader("Dataset Metrics")
         # Basic metrics in 5 columns
         metrics_cols = st.columns(5)
         with metrics_cols[0]:
-            st.metric("Total Words", dataset_json.get("total_wc", 0))
+            st.metric("Total Words", dataset.get("total_wc", 0))
         with metrics_cols[1]:
-            st.metric("Collections", dataset_json.get("collections_count", 0))
+            st.metric("Collections", dataset.get("collections_count", 0))
         with metrics_cols[2]:
-            st.metric("Total Chunks", dataset_json.get("total_cc", 0))
+            st.metric("Total Chunks", dataset.get("total_cc", 0))
         with metrics_cols[3]:
-            total_chunks = dataset_json.get("total_cc", 0)
-            chunks_with_text = dataset_json.get("chunks_with_text", 0)
+            total_chunks = dataset.get("total_cc", 0)
+            chunks_with_text = dataset.get("chunks_with_text", 0)
             percentage = (chunks_with_text / total_chunks) * 100 if total_chunks else 0
             st.metric("Chunks Text", f"{percentage:.1f}%")
         with metrics_cols[4]:
-            total_collections = dataset_json.get("collections_count", 0)
-            collections_with_text = dataset_json.get("collections_with_text", 0)
+            total_collections = dataset.get("collections_count", 0)
+            collections_with_text = dataset.get("collections_with_text", 0)
             percentage = (collections_with_text / total_collections) * 100 if total_collections else 0
             st.metric("Collections Text",  f"{percentage:.1f}%")
                 
@@ -139,46 +139,46 @@ def display_dataset_metrics(dataset_json: Dict[str, Any]) -> None:
             st.subheader("Collection Size Distribution")
             tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
             with tab1:
-                plot_size_distribution(dataset_json, by_chunks=True, category='collection')
+                plot_size_distribution(dataset, by_chunks=True, category='collection')
                 
             with tab2:
-                plot_size_distribution(dataset_json, by_chunks=False, category='collection')
+                plot_size_distribution(dataset, by_chunks=False, category='collection')
         
         # Topic Coverage Distribution (Stacked Bar Chart)
         with st.expander("Topic Coverage Distribution", expanded=False, icon="💬"):
             st.subheader("Topic Coverage Distribution")
             tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
             with tab1:
-                plot_size_distribution(dataset_json, by_chunks=True, category='topic')
+                plot_size_distribution(dataset, by_chunks=True, category='topic')
                 
             with tab2:
-                plot_size_distribution(dataset_json, by_chunks=False, category='topic')
+                plot_size_distribution(dataset, by_chunks=False, category='topic')
         
         # Overall Sentiment Distribution (Pie Charts and Box Plot)
         with st.expander("Overall Sentiment Distribution", expanded=False, icon="😃"):
             st.subheader("Overall Sentiment Distribution")
             tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
             with tab1:
-                plot_sentiment_pie_chart(dataset_json, by_chunks=True)
+                plot_sentiment_pie_chart(dataset, by_chunks=True)
             with tab2:
-                plot_sentiment_pie_chart(dataset_json, by_chunks=False)
+                plot_sentiment_pie_chart(dataset, by_chunks=False)
             
         # Word Count Distribution by Chunk (Box Plot)
         with st.expander("Word Count Distribution by Chunk", expanded=False, icon="📊"):
             st.subheader("Word Count Distribution by Chunk")
-            plot_sentiment_box_plot(dataset_json)
+            plot_sentiment_box_plot(dataset)
 
-def plot_size_distribution(dataset_json: Dict[str, Any], by_chunks: bool = True, category: str = 'collection') -> None:
+def plot_size_distribution(dataset: Dict[str, Any], by_chunks: bool = True, category: str = 'collection') -> None:
     """
     Plot a stacked bar chart showing sentiment distribution by either topic or collection.
     
     Args:
-        dataset_json: The dataset JSON object
+        dataset: The dataset JSON object
         by_chunks: If True, use chunk count; otherwise use word count
         category: Display data organized by 'topic's or by 'collection's
     """
     # Check if data is available
-    if not dataset_json:
+    if not dataset:
         st.info("No data available for chart.")
         return
     
@@ -190,7 +190,7 @@ def plot_size_distribution(dataset_json: Dict[str, Any], by_chunks: bool = True,
     if category == 'topic':
         # --- Topic-based chart data processing ---
         # Get distribution data based on count type
-        distribution = dataset_json.get(f"ts_{'cc' if by_chunks else 'wc'}_distribution", {})
+        distribution = dataset.get(f"ts_{'cc' if by_chunks else 'wc'}_distribution", {})
         
         if not distribution:
             st.info(f"No {'chunk' if by_chunks else 'word'} count distribution data available by topic.")
@@ -225,7 +225,7 @@ def plot_size_distribution(dataset_json: Dict[str, Any], by_chunks: bool = True,
     
     elif category == 'collection':
         # --- Collection-based chart data processing ---
-        collections = dataset_json.get("collections", [])
+        collections = dataset.get("collections", [])
         if not collections:
             st.info("No collections data available for chart.")
             return
@@ -308,16 +308,16 @@ def plot_size_distribution(dataset_json: Dict[str, Any], by_chunks: bool = True,
     # Display the chart
     st.pyplot(fig)
 
-def plot_sentiment_pie_chart(dataset_json: Dict[str, Any], by_chunks: bool = True) -> None:
+def plot_sentiment_pie_chart(dataset: Dict[str, Any], by_chunks: bool = True) -> None:
     """
     Plot pie chart showing sentiment distribution by either chunk count or word count.
     
     Args:
-        dataset_json: The dataset JSON object
+        dataset: The dataset JSON object
         by_chunks: If True, use chunk count; otherwise use word count
     """
     # Get the appropriate sentiment distribution data
-    sentiment_data = dataset_json.get(f"sentiment_{'cc' if by_chunks else 'wc'}_distribution", {})
+    sentiment_data = dataset.get(f"sentiment_{'cc' if by_chunks else 'wc'}_distribution", {})
     
     # Check if data is available
     if not sentiment_data:
@@ -358,16 +358,16 @@ def plot_sentiment_pie_chart(dataset_json: Dict[str, Any], by_chunks: bool = Tru
     plt.tight_layout()
     st.pyplot(fig)
 
-def plot_sentiment_box_plot(dataset_json: Dict[str, Any]) -> None:
+def plot_sentiment_box_plot(dataset: Dict[str, Any]) -> None:
     """ 
     Plot a box plot representing the word count distribution of chunks grouped by sentiment. 
     
     Args:
-        dataset_json: The dataset JSON object
+        dataset: The dataset JSON object
     """
     # Extract chunk data from collections
     chunks_data = []
-    collections = dataset_json.get("collections", [])
+    collections = dataset.get("collections", [])
     
     # Process each collection's chunks to gather sentiment-based word count data
     for collection in collections:
@@ -419,6 +419,360 @@ def plot_sentiment_box_plot(dataset_json: Dict[str, Any]) -> None:
     plt.tight_layout()
     st.pyplot(fig)
 
+def initialize_collection_filters(collections, dataset_id=None):
+    """
+    Initialize session state for collection filters based on the current dataset.
+    
+    Args:
+        collections: List of collections from the dataset
+        dataset_id: Identifier for the current dataset to track changes
+    """
+    # Check if filters need initialization (first load) or re-initialization (dataset changed)
+    if ("filter_dataset_id" not in st.session_state or 
+            st.session_state.filter_dataset_id != dataset_id or
+            "filter_min_wc" not in st.session_state):
+        
+        # Store the current dataset ID for change detection
+        st.session_state.filter_dataset_id = dataset_id
+        
+        # Calculate maximum values based on actual dataset
+        max_wc = max([c.get("collection_wc", 0) for c in collections]) if collections else 100
+        max_cc = max([c.get("collection_cc", 0) for c in collections]) if collections else 10
+        
+        # Initialize filter values
+        st.session_state.filter_min_wc = 0
+        st.session_state.filter_max_wc = max_wc
+        st.session_state.filter_min_cc = 0
+        st.session_state.filter_max_cc = max_cc
+        st.session_state.filter_topic = "All"
+        st.session_state.filter_sentiment = "All"
+        st.session_state.filter_text_status = "All"
+        st.session_state.filter_applied = False
+        
+        # Important: Don't set widget values directly, just store the initial values
+        # These will be used when the widgets are created
+        st.session_state.initial_wc_min = 0
+        st.session_state.initial_wc_max = max_wc
+        st.session_state.initial_cc_min = 0
+        st.session_state.initial_cc_max = max_cc
+        st.session_state.initial_topic = "All"
+        st.session_state.initial_sentiment = "All"
+        st.session_state.initial_text_status = "All"
+
+def display_collection_filters(collections, all_topics, all_sentiments):
+    """
+    Display collection filter controls.
+    
+    Args:
+        collections: List of collections from the dataset
+        all_topics: Set of all available topics
+        all_sentiments: Set of all available sentiments
+        
+    Returns:
+        bool: True if filters should be applied, False otherwise
+    """
+    with st.container(border=True):
+        st.markdown("#### Filter Collections")
+        
+        col1, col2 = st.columns(2)
+        
+        # Get current max values
+        max_wc = max([c.get("collection_wc", 0) for c in collections]) if collections else 100
+        max_cc = max([c.get("collection_cc", 0) for c in collections]) if collections else 10
+        
+        with col1:
+            # Word count range slider - using the current filter values
+            wc_values = st.slider(
+                "Word Count Range",
+                min_value=0,
+                max_value=max_wc,
+                value=(st.session_state.filter_min_wc, st.session_state.filter_max_wc),
+                key="temp_wc_range"
+            )
+            
+            # Topic select box
+            topic = st.selectbox(
+                "Filter by Topic",
+                options=["All"] + sorted(list(all_topics)),
+                index=0 if st.session_state.filter_topic == "All" else 
+                     sorted(list(all_topics)).index(st.session_state.filter_topic) + 1 
+                     if st.session_state.filter_topic in all_topics else 0,
+                key="temp_topic"
+            )
+            
+            # Text status selectbox
+            text_status_options = ["All", "Has Text", "No Text"]
+            text_status = st.selectbox(
+                "Filter by Text Status",
+                options=text_status_options,
+                index=text_status_options.index(st.session_state.filter_text_status) 
+                      if st.session_state.filter_text_status in text_status_options else 0,
+                key="temp_text_status"
+            )
+        
+        with col2:
+            # Chunk count range slider
+            cc_values = st.slider(
+                "Chunk Count Range",
+                min_value=0,
+                max_value=max_cc,
+                value=(st.session_state.filter_min_cc, st.session_state.filter_max_cc),
+                key="temp_cc_range"
+            )
+            
+            # Sentiment select box
+            sentiment = st.selectbox(
+                "Filter by Sentiment",
+                options=["All"] + sorted(list(all_sentiments)),
+                index=0 if st.session_state.filter_sentiment == "All" else 
+                     sorted(list(all_sentiments)).index(st.session_state.filter_sentiment) + 1 
+                     if st.session_state.filter_sentiment in all_sentiments else 0,
+                key="temp_sentiment"
+            )
+        
+        # Apply filters button
+        apply_filters = st.button("Apply Filters", type="primary")
+        
+        if apply_filters:
+            # Copy temporary values to actual filter values
+            st.session_state.filter_min_wc = wc_values[0]
+            st.session_state.filter_max_wc = wc_values[1]
+            st.session_state.filter_min_cc = cc_values[0]
+            st.session_state.filter_max_cc = cc_values[1]
+            st.session_state.filter_topic = topic
+            st.session_state.filter_sentiment = sentiment
+            st.session_state.filter_text_status = text_status
+            st.session_state.filter_applied = True
+            
+        return apply_filters
+
+def display_collections_table(dataset: Dict[str, Any]) -> None:
+    """
+    Display a table of collections with advanced filtering.
+    
+    Args:
+        dataset: The dataset JSON object
+    """
+    collections = dataset.get("collections", [])
+    if not collections:
+        st.info("No collections found in this dataset.")
+        return
+
+    st.subheader("Collections")
+    
+    # Reset filters if a new dataset is selected
+    selected_dataset = st.session_state.get("Dataset_selected", None)
+    if st.session_state.get("current_dataset") != selected_dataset:
+        keys_to_reset = [
+            "filter_dataset_id", "filter_min_wc", "filter_max_wc", "filter_min_cc", "filter_max_cc",
+            "filter_topic", "filter_sentiment", "filter_text_status", "filter_applied",
+            "initial_wc_min", "initial_wc_max", "initial_cc_min", "initial_cc_max", "initial_topic",
+            "initial_sentiment", "initial_text_status"
+        ]
+        for key in keys_to_reset:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.session_state["current_dataset"] = selected_dataset
+
+    # Get the dataset ID to detect changes
+    dataset_id = dataset.get("id", dataset.get("name", None))
+    
+    # Initialize filters based on this dataset
+    initialize_collection_filters(collections, dataset_id)
+    
+    # Get all available topics and sentiments
+    all_topics = set()
+    all_sentiments = set()
+    
+    for collection in collections:
+        for chunk in collection.get("chunks", []):
+            chunk_dict = chunk.get("chunk_dict", {})
+            topic = chunk_dict.get("topic")
+            sentiment = chunk_dict.get("sentiment")
+            if topic:
+                all_topics.add(topic)
+            if sentiment:
+                all_sentiments.add(sentiment)
+    
+    # Display filter controls
+    display_collection_filters(collections, all_topics, all_sentiments)
+    
+    # Handle filter reset if applicable
+    if st.session_state.filter_applied:
+        
+        # Reset filters button
+        if st.button("Reset Table", type="secondary"):
+            # Calculate maximum values based on actual dataset
+            max_wc = max([c.get("collection_wc", 0) for c in collections]) if collections else 100
+            max_cc = max([c.get("collection_cc", 0) for c in collections]) if collections else 10
+            
+            # Reset filter values
+            st.session_state.filter_min_wc = 0
+            st.session_state.filter_max_wc = max_wc
+            st.session_state.filter_min_cc = 0
+            st.session_state.filter_max_cc = max_cc
+            st.session_state.filter_topic = "All"
+            st.session_state.filter_sentiment = "All"
+            st.session_state.filter_text_status = "All"
+            st.session_state.filter_applied = False
+            
+            # Apply the reset
+            st.rerun()
+        
+        # Show summary of applied filters
+        filter_summary = []
+        max_wc = max([c.get("collection_wc", 0) for c in collections]) if collections else 100
+        max_cc = max([c.get("collection_cc", 0) for c in collections]) if collections else 10
+        
+        if st.session_state.filter_min_wc > 0 or st.session_state.filter_max_wc < max_wc:
+            filter_summary.append(f"Words: {st.session_state.filter_min_wc}-{st.session_state.filter_max_wc}")
+        
+        if st.session_state.filter_min_cc > 0 or st.session_state.filter_max_cc < max_cc:
+            filter_summary.append(f"Chunks: {st.session_state.filter_min_cc}-{st.session_state.filter_max_cc}")
+        
+        if st.session_state.filter_topic != "All":
+            filter_summary.append(f"Topic: {st.session_state.filter_topic}")
+            
+        if st.session_state.filter_sentiment != "All":
+            filter_summary.append(f"Sentiment: {st.session_state.filter_sentiment}")
+            
+        if st.session_state.filter_text_status != "All":
+            filter_summary.append(f"Text: {st.session_state.filter_text_status}")
+            
+        if filter_summary:
+            st.caption(f"Filters applied: {', '.join(filter_summary)}")
+    
+    # Create a dataframe with collection information
+    collection_data = []
+    
+    max_chunk_count = max([c.get("collection_cc", 0) for c in collections])
+    
+    for i, collection in enumerate(collections):
+        # Get collection metrics
+        cc = collection.get("collection_cc", 0)
+        wc = collection.get("collection_wc", 0)
+        has_text = collection.get("full_text") is not None
+        
+        # Get topics and sentiments with counts
+        topic_sentiment = {}
+        chunk_word_counts = []
+        
+        # Track if collection matches sentiment/topic filters
+        matches_sentiment_filter = st.session_state.filter_sentiment == "All"
+        matches_topic_filter = st.session_state.filter_topic == "All"
+        
+        for chunk in collection.get("chunks", []):
+            chunk_dict = chunk.get("chunk_dict", {})
+            sentiment = chunk_dict.get("sentiment", "Unknown")
+            topic = chunk_dict.get("topic", "Unknown")
+            wc_chunk = chunk_dict.get("wc", 0)
+            
+            # Add to word count list for bar chart
+            chunk_word_counts.append(wc_chunk)
+            
+            # Create topic-sentiment pairs
+            key = (topic, sentiment)
+            if key in topic_sentiment:
+                topic_sentiment[key] += 1
+            else:
+                topic_sentiment[key] = 1
+            
+            # Check if matches filters
+            if sentiment == st.session_state.filter_sentiment:
+                matches_sentiment_filter = True
+            if topic == st.session_state.filter_topic:
+                matches_topic_filter = True
+        
+        # Apply filters
+        if st.session_state.filter_applied:
+            # Text status filter check
+            text_status_match = True
+            if st.session_state.filter_text_status == "Has Text" and not has_text:
+                text_status_match = False
+            elif st.session_state.filter_text_status == "No Text" and has_text:
+                text_status_match = False
+                
+            # Skip if doesn't match filters
+            if (wc < st.session_state.filter_min_wc or 
+                wc > st.session_state.filter_max_wc or
+                cc < st.session_state.filter_min_cc or 
+                cc > st.session_state.filter_max_cc or
+                (st.session_state.filter_sentiment != "All" and not matches_sentiment_filter) or
+                (st.session_state.filter_topic != "All" and not matches_topic_filter) or
+                not text_status_match):
+                continue
+        
+        # Format topic-sentiment pairs into a readable format
+        topic_sentiment_display = []
+        for (topic, sentiment), count in sorted(topic_sentiment.items(), key=lambda x: x[1], reverse=True):
+            # Add emoji based on sentiment
+            emoji = "😊" if sentiment == "positive" else "😐" if sentiment == "neutral" else "😟" if sentiment == "negative" else "❓"
+            topic_sentiment_display.append(f"{emoji} {topic}")
+        
+        # Normalize chunk word counts for consistent bar widths
+        normalized_word_counts = chunk_word_counts
+        
+        # Add zeros to fill up to max_chunk_count
+        while len(normalized_word_counts) < max_chunk_count:
+            normalized_word_counts.append(0)
+        
+        # Add to data
+        collection_data.append({
+            "Chunks": cc,
+            "Words": wc,
+            "Topics & Sentiment": topic_sentiment_display,
+            "Chunk Distribution": normalized_word_counts,
+            "Has Text": "✓" if has_text else "✗"
+        })
+    
+    # Create dataframe
+    df = pd.DataFrame(collection_data)
+    
+    # Find the max word count in any chunk for y-axis scaling
+    max_chunk_wc = max([max(row["Chunk Distribution"]) if row["Chunk Distribution"] else 0 for row in collection_data]) + 5
+    
+    # Display as a dataframe with custom formatting
+    st.dataframe(
+        df,
+        column_config={
+            "ID": st.column_config.NumberColumn(
+                "ID",
+                help="Collection ID",
+                width="small",
+            ),
+            "Chunks": st.column_config.NumberColumn(
+                "Chunks",
+                help="Number of chunks",
+                format="%d",
+                width="small",
+            ),
+            "Words": st.column_config.NumberColumn(
+                "Words",
+                help="Word count",
+                format="%d",
+                width="small",
+            ),
+            "Topics & Sentiment": st.column_config.ListColumn(
+                "Topics & Sentiment",
+                help="Topics with sentiment indicators (😊 positive, 😐 neutral, ☹️ negative)",
+                width="large",
+            ),
+            "Chunk Distribution": st.column_config.BarChartColumn(
+                "Word Count by Chunk",
+                help="Distribution of word count across chunks",
+                y_min=0,
+                y_max=max_chunk_wc,
+            ),
+            "Has Text": st.column_config.TextColumn(
+                "Has Text",
+                help="Whether the collection has full text available",
+                width="small",
+            ),
+        },
+        hide_index=False,
+        use_container_width=True,
+    )
+
 # --- Streamlit Page Layout ---
 st.title("Datasets")
 
@@ -442,18 +796,23 @@ selected_dataset = saved_items_selector(DS_JSON_DIR, "Dataset")
 if selected_dataset:
     # Validate and load the selected dataset
     file_path = DS_JSON_DIR / selected_dataset
-    dataset_json = load_and_validate_json(file_path, validate_and_update_dataset_meta)
+    dataset = load_and_validate_json(file_path, validate_and_update_dataset_meta)
 
     # Display dataset content
-    if dataset_json:
+    if dataset:
         st.markdown("---")
         st.info(f"{selected_dataset}")
         
-        # Call the modularized function to display metrics
-        display_dataset_metrics(dataset_json)
+        metrics_tab, collections_tab = st.tabs(["Dataset Metrics", "Collections"])
         
-        # Display the full JSON in an expander at the bottom
-        with st.expander("View Raw JSON Data", expanded=False):
-            st.json(dataset_json)
+        with metrics_tab:
+            display_dataset_metrics(dataset)
+        
+        with collections_tab:
+            display_collections_table(dataset)
+        
+        # # Display the full JSON in an expander at the bottom
+        # with st.expander("View Raw JSON Data", expanded=False):
+        #     st.json(dataset)
 else:
     st.info("Generate and select a dataset to view its content.")
