@@ -9,12 +9,13 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 
-from view_components.alert import show_alert
-from view_components.saved_items_selector import saved_items_selector, get_items_list
-from view_components.load_and_validate_json import load_and_validate_json
+from view_components.alerter import show_alert
+from view_components.item_selector import saved_items_selector, get_items_list
+from view_components.file_loader import load_and_validate_json, validate_and_save_json
 from utils.settings_manager import get_setting
 from chunk_manager.rulebook_parser import validate_rulebook_values
 from dataset_manager.dataset_structurer import create_dataset_structure, validate_and_update_dataset_meta
+from dataset_manager.text_generator import generate_collection_text
 
 # Chart styling constants
 SENTIMENT_COLORS = {
@@ -773,6 +774,117 @@ def display_collections_table(dataset: Dict[str, Any]) -> None:
         use_container_width=True,
     )
 
+def display_text_generation_tab(file_path: str, dataset: Dict[str, Any]) -> None:
+    """
+    Display text generation interface for a selected collection.
+    
+    Args:
+        dataset: The dataset JSON object
+    """
+    # Check if collections exist
+    collections = dataset.get("collections", [])
+    if not collections:
+        st.info("No collections found in this dataset.")
+        return
+    
+    # Check if review item exists
+    review_item = dataset.get("review_item", None)
+    if not review_item:
+        st.info("No review item found in this dataset.")
+        return
+        
+    st.subheader("Select a Collection")
+    
+    # Collection selector
+    col_count = len(collections)
+    col_index = st.number_input(
+        "Selected Index", 
+        min_value=0, 
+        max_value=col_count-1, 
+        value=0,
+        step=1
+    )
+    st.caption(f"Collection index range: 0-{col_count-1}")
+    
+    # Get selected collection
+    selected_collection = collections[col_index]
+    
+    # Display generation button
+    models = [i for i in get_setting("OPENAI_LLM_MODELS").values()]
+    selected_model = st.selectbox(
+        f"LLM Model Selector",
+        models,
+        key=f"llm_model_selector"
+    )
+    collection_text = selected_collection.get("collection_text", "")
+    if st.button(f"{"Re-G" if collection_text else "G"}enerate Collection Text", icon="🤖"):
+        # Generate text for the collection
+        captured_output = io.StringIO()
+        print("""Datasets View: START SUBPROCESS - Generate Collection Text""")
+        with contextlib.redirect_stdout(captured_output):
+            with st.spinner("Generating collection text. Please wait...", show_time=True):
+                collection_with_generated_text = generate_collection_text(selected_collection, review_item, selected_model)
+            if collection_with_generated_text:
+                collections[col_index] = collection_with_generated_text
+                dataset["collections"] = collections
+                validate_and_save_json(file_path=file_path, json_data=dataset, validation_function=validate_and_update_dataset_meta)
+        print("""Datasets View: END SUBPROCESS - Generate Collection Text""")
+    
+    st.divider()
+    st.subheader("Collection Information")
+    
+    # Display the generated text
+    collection_text = selected_collection.get("collection_text", "")
+    if collection_text:
+        with st.expander("Collection Text", expanded=True, icon="💬"):
+            st.markdown(collection_text)
+    
+    
+    # Display metrics for the selected collection
+    with st.container(border=True):
+        cols = st.columns([2, 1, 2, 2, 2])
+        with cols[0]:
+            st.metric(f"Collection Index", col_index)
+        with cols[1]:
+            st.empty()
+        with cols[2]:
+            st.metric("Chunk Count", selected_collection.get("collection_cc", 0))
+        with cols[3]:
+            st.metric("Given Word Count", selected_collection.get("collection_wc", 0))
+        with cols[4]:
+            collection_text_len = len(str(selected_collection.get("collection_text", "")).split())
+            st.metric("Actual Word Count", collection_text_len if collection_text_len > 1 else "N/A")
+    
+    # Display chunk information
+    chunks = selected_collection.get("chunks", [])
+    for i, chunk in enumerate(chunks):
+        chunk_dict = chunk.get("chunk_dict", {})
+        chunk_text = chunk.get("chunk_text", "")
+        
+        with st.container(border=True):
+            
+            cols = st.columns([2, 1, 4, 2, 2])
+            with cols[0]:
+                st.info(f"Chunk {i+1}")
+            with cols[1]:
+                st.empty()
+            with cols[2]:
+                st.caption("Topic")
+                st.write(chunk_dict.get("topic", "Unknown"))
+            with cols[3]:
+                st.caption("Sentiment")
+                st.write(chunk_dict.get("sentiment", "Unknown"))
+            with cols[4]:
+                st.caption("Word Count")
+                st.write(chunk_dict.get("wc", 0))
+            
+            # Display chunk text
+            st.divider()
+            if chunk_text:
+                st.markdown(chunk_text)
+            else:
+                st.markdown("No text available for this chunk.")
+
 # --- Streamlit Page Layout ---
 st.title("Datasets")
 
@@ -803,16 +915,16 @@ if selected_dataset:
         st.markdown("---")
         st.info(f"{selected_dataset}")
         
-        metrics_tab, collections_tab = st.tabs(["Dataset Metrics", "Collections"])
+        metrics_tab, collections_tab, generation_tab = st.tabs(["Dataset Metrics", "Collections Table", "Text Generation"])
         
         with metrics_tab:
             display_dataset_metrics(dataset)
         
         with collections_tab:
             display_collections_table(dataset)
+            
+        with generation_tab:
+            display_text_generation_tab(file_path, dataset)
         
-        # # Display the full JSON in an expander at the bottom
-        # with st.expander("View Raw JSON Data", expanded=False):
-        #     st.json(dataset)
 else:
     st.info("Generate and select a dataset to view its content.")

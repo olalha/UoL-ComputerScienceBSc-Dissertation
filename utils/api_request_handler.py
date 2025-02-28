@@ -134,6 +134,7 @@ def prompt_openai_llm_single(model: str, messages: List[Dict]) -> Dict:
         
         # Get response from OpenAI API and validate
         response = await _send_openai_request({'model': model, 'messages': messages})
-        return _validate_openai_response(response, messages)
+        validatated_response =  await _validate_openai_response(response, messages)
+        return validatated_response
     
     return asyncio.run(async_wrapper())

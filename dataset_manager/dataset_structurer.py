@@ -54,7 +54,7 @@ def create_dataset_structure(rulebook: dict, solution_search_time_s: int) -> Opt
     # Prepare dataset structure
     collections = []
     for item in solution:
-        collection = {'chunks': [], 'full_text': None}
+        collection = {'chunks': [], 'collection_text': None}
         for chunk_dict in item['chunks']:
             collection['chunks'].append({'chunk_dict': chunk_dict, 'chunk_text': None})
         collections.append(collection)
@@ -144,7 +144,7 @@ def validate_and_update_dataset_meta(dataset_structure: dict) -> Optional[dict]:
         
         # Update collection text count
         chunks_with_text += chunk_text_count
-        if collection['full_text']:
+        if collection['collection_text']:
             collections_with_text += 1
         
         # Update collection distribution
@@ -211,12 +211,12 @@ def validate_dataset_structure(dataset_structure: dict) -> bool:
             print(f"validate_dataset_structure: Collection at index {i} must be a dictionary")
             return False
         
-        # Check full_text is None or string
-        if 'full_text' not in collection:
-            print(f"validate_dataset_structure: Collection at index {i} missing 'full_text' key")
+        # Check collection_text is None or string
+        if 'collection_text' not in collection:
+            print(f"validate_dataset_structure: Collection at index {i} missing 'collection_text' key")
             return False
-        if collection['full_text'] is not None and not isinstance(collection['full_text'], str):
-            print(f"validate_dataset_structure: 'full_text' in collection {i} must be None or a string")
+        if collection['collection_text'] is not None and not isinstance(collection['collection_text'], str):
+            print(f"validate_dataset_structure: 'collection_text' in collection {i} must be None or a string")
             return False
         
         # Check chunks exists and is a list
@@ -241,9 +241,9 @@ def validate_dataset_structure(dataset_structure: dict) -> bool:
                 print(f"validate_dataset_structure: 'chunk_text' in chunk {j} of collection {i} must be None or a string")
                 return False
             
-            # Check full_text and chunk_text are consistent
-            if collection['full_text'] is not None and chunk['chunk_text'] is None:
-                print(f"validate_dataset_structure: Collection at index {i} has full_text but chunk at index {j} has no chunk_text")
+            # Check collection_text and chunk_text are consistent
+            if collection['collection_text'] is not None and chunk['chunk_text'] is None:
+                print(f"validate_dataset_structure: Collection at index {i} has collection_text but chunk at index {j} has no chunk_text")
                 return False
             
             # Check chunk_dict exists and is a dict
