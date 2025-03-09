@@ -125,15 +125,17 @@ def display_dataset_metrics(dataset: Dict[str, Any]) -> None:
         with metrics_cols[2]:
             st.metric("Total Chunks", dataset.get("total_cc", 0))
         with metrics_cols[3]:
-            total_chunks = dataset.get("total_cc", 0)
-            chunks_with_text = dataset.get("chunks_with_text", 0)
-            percentage = (chunks_with_text / total_chunks) * 100 if total_chunks else 0
-            st.metric("Chunks Text", f"{percentage:.1f}%")
+            # total_chunks = dataset.get("total_cc", 0)
+            # chunks_with_text = dataset.get("chunks_with_text", 0)
+            # percentage = (chunks_with_text / total_chunks) * 100 if total_chunks else 0
+            # st.metric("Chunks Text", f"{percentage:.1f}%")
+            pass
         with metrics_cols[4]:
-            total_collections = dataset.get("collections_count", 0)
-            collections_with_text = dataset.get("collections_with_text", 0)
-            percentage = (collections_with_text / total_collections) * 100 if total_collections else 0
-            st.metric("Collections Text",  f"{percentage:.1f}%")
+            # total_collections = dataset.get("collections_count", 0)
+            # collections_with_text = dataset.get("collections_with_text", 0)
+            # percentage = (collections_with_text / total_collections) * 100 if total_collections else 0
+            # st.metric("Collections Text",  f"{percentage:.1f}%")
+            pass
                 
         # Collection Size Distribution (Stacked Bar Chart)
         with st.expander("Collection Size Distribution", expanded=False, icon="📈"):
@@ -918,7 +920,8 @@ if selected_dataset:
         metrics_tab, collections_tab, generation_tab = st.tabs(["Dataset Metrics", "Collections Table", "Text Generation"])
         
         with metrics_tab:
-            display_dataset_metrics(dataset)
+            if st.button("Caculate Metrics", icon="➗"):
+                display_dataset_metrics(dataset)
         
         with collections_tab:
             display_collections_table(dataset)
