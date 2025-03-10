@@ -5,12 +5,193 @@ from typing import Optional
 
 from utils.settings_manager import get_setting
 
+def parse_rulebook_excel(file_path: Path) -> Optional[dict]:
+    """
+    Parses an Excel workbook defining the topic sentiment distribution for a text corpus with additional parameters.
+    
+    The Excel workbook must adhere to the template structure, including:
+      - A "MAIN" sheet containing:
+          - 'content_title' in cell A1 (string)
+          - 'collection_mode' in cell E1 (either "word" or "chunk")
+          - 'total' in cell G1 (an integer greater than 0)
+          - 'content_rules' starting from row 5 with columns:
+                * Column A: topic (string)
+                * Column B: total_proportion (numeric value between 0 and 1)
+                * Columns C-E: sentiment_proportion (three numbers that sum to 1)
+                * Column H: chunk_min_wc (integer > 0)
+                * Column I: chunk_max_wc (integer greater than chunk_min_wc)
+                * Column J: chunk_pref (preferred number based on collection_mode)
+                * Column K: chunk_wc_distribution (optional, with a default if not provided)
+      - A "COLLECTION_RANGES" sheet containing:
+          - Ranges defined with start, end, and target_fraction (with contiguous ranges and sum of target_fraction equal to 1)
+    
+    After extracting and mapping the values, the function validates the data using a shared helper.
+    If validation passes, the rulebook is written to a JSON file in the "_data/rulebooks/json" directory.
+
+    Args:
+        file_path (Path): Full path to the Excel workbook.
+
+    Returns:
+        Optional[Path]: Full path to the newly created JSON file on success, or None if a validation or processing error occurs.
+    """
+    try:
+        # Validate the file path and extension
+        if not file_path.exists():
+            print(f"parse_rulebook_excel: File does not exist: {file_path}")
+            return None
+        if file_path.suffix.lower() not in {'.xlsx', '.xlsm'}:
+            print(f"parse_rulebook_excel: File is not an Excel workbook: {file_path}")
+            return None
+
+        wb = openpyxl.load_workbook(file_path)
+        if "MAIN" not in wb.sheetnames:
+            print(f"parse_rulebook_excel: 'MAIN' sheet not found in workbook: {file_path}")
+            return None
+        ws = wb["MAIN"]
+
+        # Retrieve top-level values
+        content_title = ws['A1'].value
+        collection_mode = ws['E1'].value
+        total = ws['G1'].value
+
+        # Validate top-level values
+        if not isinstance(content_title, str):
+            print("parse_rulebook_excel: Invalid value in cell A1 for content_title.")
+            return None
+        if collection_mode not in ('word', 'chunk'):
+            print("parse_rulebook_excel: Invalid value in cell E1 for collection_mode.")
+            return None
+        if not isinstance(total, int) or total <= 0:
+            print("parse_rulebook_excel: Invalid value in cell G1 for total.")
+            return None
+
+        content_rules = {}
+        # Process rows from the MAIN sheet starting at row 5
+        for row_num, row in enumerate(ws.iter_rows(min_row=5, max_col=11, values_only=True), start=5):
+            topic = row[0]
+            if topic is None:
+                break
+            if not isinstance(topic, str):
+                print(f"parse_rulebook_excel: Non-string value for topic at row {row_num}.")
+                return None
+
+            # Extract values from the row
+            total_proportion = row[1]
+            c, d, e = row[2], row[3], row[4]
+            chunk_min_wc = row[7]
+            chunk_max_wc = row[8]
+            chunk_pref_raw = row[9]
+            chunk_wc_distribution_raw = row[10]
+
+            # Validate and process the values
+            if not isinstance(total_proportion, (int, float)):
+                print(f"parse_rulebook_excel: Non-numeric value for proportion at row {row_num}.")
+                return None
+            if any(not isinstance(val, (int, float)) for val in (c, d, e)):
+                print(f"parse_rulebook_excel: Non-numeric value for sentiment at row {row_num}.")
+                return None
+            if chunk_min_wc is None or not isinstance(chunk_min_wc, int):
+                print(f"parse_rulebook_excel: Non-integer value for chunk_min_wc at row {row_num}.")
+                return None
+            if chunk_max_wc is None or not isinstance(chunk_max_wc, int):
+                print(f"parse_rulebook_excel: Non-integer value for chunk_max_wc at row {row_num}.")
+                return None
+
+            # Process chunk_pref based on collection_mode
+            chunk_pref = 0.50
+            if collection_mode == "word":
+                if chunk_pref_raw is not None:
+                    chunk_count_pref_str = str(chunk_pref_raw).strip()
+                    mapping = {
+                        "Lowest Number": get_setting('CHUNK_COUNT_MAPPING', 'Lowest_Number'),
+                        "Low Number": get_setting('CHUNK_COUNT_MAPPING', 'Low_Number'),
+                        "Mean Number": get_setting('CHUNK_COUNT_MAPPING', 'Mean_Number'),
+                        "High Number": get_setting('CHUNK_COUNT_MAPPING', 'High_Number'),
+                        "Highest Number": get_setting('CHUNK_COUNT_MAPPING', 'Highest_Number')
+                    }
+                    chunk_pref = mapping.get(chunk_count_pref_str, 0.5)
+            else:
+                if chunk_pref_raw is not None:
+                    chunk_count_pref_str = str(chunk_pref_raw).strip()
+                    mapping = {
+                        "Very Small": get_setting('CHUNK_SIZE_MAPPING', 'Very_Small'),
+                        "Small": get_setting('CHUNK_SIZE_MAPPING', 'Small'),
+                        "Medium": get_setting('CHUNK_SIZE_MAPPING', 'Medium'),
+                        "Large": get_setting('CHUNK_SIZE_MAPPING', 'Large'),
+                        "Very Large": get_setting('CHUNK_SIZE_MAPPING', 'Very_Large')
+                    }
+                    chunk_pref = mapping.get(chunk_count_pref_str, 0.5)
+
+            # Process chunk_wc_distribution with default value if not provided
+            chunk_wc_distribution = 5.0
+            if chunk_wc_distribution_raw is not None:
+                chunk_wc_distribution_str = str(chunk_wc_distribution_raw).strip()
+                mapping_dist = {
+                    "Low Variation": get_setting('CHUNK_VAR_MAPPING', 'Low_Variation'),
+                    "Average Variation": get_setting('CHUNK_VAR_MAPPING', 'Average_Variation'),
+                    "High Variation": get_setting('CHUNK_VAR_MAPPING', 'High_Variation')
+                }
+                chunk_wc_distribution = mapping_dist.get(chunk_wc_distribution_str, 5.0)
+
+            if total_proportion > 0:
+                content_rules[topic] = {
+                    'total_proportion': total_proportion,
+                    'sentiment_proportion': (c, d, e),
+                    'chunk_min_wc': chunk_min_wc,
+                    'chunk_max_wc': chunk_max_wc,
+                    'chunk_pref': chunk_pref,
+                    'chunk_wc_distribution': chunk_wc_distribution
+                }
+
+        # Process COLLECTION_RANGES sheet
+        if "COLLECTION_RANGES" not in wb.sheetnames:
+            print(f"parse_rulebook_excel: 'COLLECTION_RANGES' sheet not found in workbook: {file_path}")
+            return None
+
+        # Validate and process collection ranges
+        COLLECTION_RANGES_ws = wb["COLLECTION_RANGES"]
+        collection_ranges = []
+        for row_num, row in enumerate(COLLECTION_RANGES_ws.iter_rows(min_row=4, max_col=3, values_only=True), start=4):
+            start_val, end_val, prop_val = row[0], row[1], row[2]
+            if start_val is None:
+                break
+            if start_val is None or end_val is None or prop_val is None:
+                print(f"parse_rulebook_excel: Missing value in COLLECTION_RANGES sheet at row {row_num}.")
+                return None
+            if not isinstance(start_val, int) or not isinstance(end_val, int):
+                print(f"parse_rulebook_excel: Incorrect value type in COLLECTION_RANGES sheet at row {row_num}.")
+                return None
+
+            collection_ranges.append({
+                'range': (int(start_val), int(end_val)),
+                'target_fraction': float(prop_val)
+            })
+
+        result = {
+            'collection_mode': collection_mode,
+            'content_title': content_title,
+            'total': total,
+            'content_rules': content_rules,
+            'collection_ranges': collection_ranges
+        }
+
+        # Validate the merged rulebook values
+        if not validate_rulebook_values(result):
+            return None
+
+        # Return the validated rulebook if successful
+        return result
+
+    except Exception as e:
+        print(f"parse_rulebook_excel: {e}")
+        return None
+
 def validate_rulebook_values(rulebook: dict) -> bool:
     """
     Validates a rulebook dictionary to ensure it conforms to the expected structure and value constraints.
 
     The rulebook dictionary must include the following keys:
-      - review_item: a string
+      - content_title: a string
       - collection_mode: either "word" or "chunk"
       - total: an integer greater than 0
       - content_rules: a dictionary mapping topic names to a dictionary with keys:
@@ -37,15 +218,15 @@ def validate_rulebook_values(rulebook: dict) -> bool:
         return False
     
     # Validate top-level keys
-    required_keys = {"review_item", "collection_mode", "total", "content_rules", "collection_ranges"}
+    required_keys = {"content_title", "collection_mode", "total", "content_rules", "collection_ranges"}
     for key in required_keys:
         if key not in rulebook:
             print(f"validate_rulebook_values: Missing key '{key}' in rulebook data.")
             return False
 
-    # Validate review_item
-    if not isinstance(rulebook["review_item"], str):
-        print("validate_rulebook_values: 'review_item' must be a string.")
+    # Validate content_title
+    if not isinstance(rulebook["content_title"], str):
+        print("validate_rulebook_values: 'content_title' must be a string.")
         return False
 
     # Validate collection_mode
@@ -183,272 +364,3 @@ def validate_rulebook_values(rulebook: dict) -> bool:
         return False
 
     return True
-
-def write_rulebook_json(rulebook: dict) -> Optional[Path]:
-    """
-    Writes the rulebook dictionary to a JSON file in the designated directory.
-
-    The function creates a unique filename based on the rulebook's 'review_item', 'collection_mode',
-    and 'total' values. It writes the JSON file in the "_data/rulebooks/json" directory, creating
-    the directory if it does not exist.
-
-    Args:
-        rulebook (dict): The validated rulebook dictionary to write.
-
-    Returns:
-        Optional[Path]: The full path to the newly created JSON file on success, or None if an error occurred.
-    """
-    try:
-        # Create the JSON directory if it does not exist
-        json_dir = Path(__file__).parent.parent / get_setting('PATH', 'rulebooks_json')
-        json_dir.mkdir(parents=True, exist_ok=True)
-        base_filename = f"{rulebook['review_item']} - {rulebook['collection_mode']} - {rulebook['total']}.json"
-        json_path = json_dir / base_filename
-        
-        # Ensure the filename is unique
-        counter = 1
-        while json_path.exists():
-            json_path = json_dir / f"{rulebook['review_item']} - {rulebook['collection_mode']} - {rulebook['total']} ({counter}).json"
-            counter += 1
-
-        # Write the JSON file
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(rulebook, f, indent=4)
-        return json_path
-    
-    except Exception as e:
-        print(f"write_rulebook_json: Error writing JSON file: {e}")
-        return None
-
-def parse_rulebook_excel(file_path: Path) -> Optional[Path]:
-    """
-    Parses an Excel workbook defining the topic sentiment distribution for a text corpus with additional parameters.
-    
-    The Excel workbook must adhere to the template structure, including:
-      - A "MAIN" sheet containing:
-          - 'review_item' in cell A1 (string)
-          - 'collection_mode' in cell E1 (either "word" or "chunk")
-          - 'total' in cell G1 (an integer greater than 0)
-          - 'content_rules' starting from row 5 with columns:
-                * Column A: topic (string)
-                * Column B: total_proportion (numeric value between 0 and 1)
-                * Columns C-E: sentiment_proportion (three numbers that sum to 1)
-                * Column H: chunk_min_wc (integer > 0)
-                * Column I: chunk_max_wc (integer greater than chunk_min_wc)
-                * Column J: chunk_pref (preferred number based on collection_mode)
-                * Column K: chunk_wc_distribution (optional, with a default if not provided)
-      - A "COLLECTION_RANGES" sheet containing:
-          - Ranges defined with start, end, and target_fraction (with contiguous ranges and sum of target_fraction equal to 1)
-    
-    After extracting and mapping the values, the function validates the data using a shared helper.
-    If validation passes, the rulebook is written to a JSON file in the "_data/rulebooks/json" directory.
-
-    Args:
-        file_path (Path): Full path to the Excel workbook.
-
-    Returns:
-        Optional[Path]: Full path to the newly created JSON file on success, or None if a validation or processing error occurs.
-    """
-    try:
-        # Validate the file path and extension
-        if not file_path.exists():
-            print(f"parse_rulebook_excel: File does not exist: {file_path}")
-            return None
-        if file_path.suffix.lower() not in {'.xlsx', '.xlsm'}:
-            print(f"parse_rulebook_excel: File is not an Excel workbook: {file_path}")
-            return None
-
-        wb = openpyxl.load_workbook(file_path)
-        if "MAIN" not in wb.sheetnames:
-            print(f"parse_rulebook_excel: 'MAIN' sheet not found in workbook: {file_path}")
-            return None
-        ws = wb["MAIN"]
-
-        # Retrieve top-level values
-        review_item = ws['A1'].value
-        collection_mode = ws['E1'].value
-        total = ws['G1'].value
-
-        # Validate top-level values
-        if not isinstance(review_item, str):
-            print("parse_rulebook_excel: Invalid value in cell A1 for review_item.")
-            return None
-        if collection_mode not in ('word', 'chunk'):
-            print("parse_rulebook_excel: Invalid value in cell E1 for collection_mode.")
-            return None
-        if not isinstance(total, int) or total <= 0:
-            print("parse_rulebook_excel: Invalid value in cell G1 for total.")
-            return None
-
-        content_rules = {}
-        # Process rows from the MAIN sheet starting at row 5
-        for row_num, row in enumerate(ws.iter_rows(min_row=5, max_col=11, values_only=True), start=5):
-            topic = row[0]
-            if topic is None:
-                break
-            if not isinstance(topic, str):
-                print(f"parse_rulebook_excel: Non-string value for topic at row {row_num}.")
-                return None
-
-            # Extract values from the row
-            total_proportion = row[1]
-            c, d, e = row[2], row[3], row[4]
-            chunk_min_wc = row[7]
-            chunk_max_wc = row[8]
-            chunk_pref_raw = row[9]
-            chunk_wc_distribution_raw = row[10]
-
-            # Validate and process the values
-            if not isinstance(total_proportion, (int, float)):
-                print(f"parse_rulebook_excel: Non-numeric value for proportion at row {row_num}.")
-                return None
-            if any(not isinstance(val, (int, float)) for val in (c, d, e)):
-                print(f"parse_rulebook_excel: Non-numeric value for sentiment at row {row_num}.")
-                return None
-            if chunk_min_wc is None or not isinstance(chunk_min_wc, int):
-                print(f"parse_rulebook_excel: Non-integer value for chunk_min_wc at row {row_num}.")
-                return None
-            if chunk_max_wc is None or not isinstance(chunk_max_wc, int):
-                print(f"parse_rulebook_excel: Non-integer value for chunk_max_wc at row {row_num}.")
-                return None
-
-            # Process chunk_pref based on collection_mode
-            chunk_pref = 0.50
-            if collection_mode == "word":
-                if chunk_pref_raw is not None:
-                    chunk_count_pref_str = str(chunk_pref_raw).strip()
-                    mapping = {
-                        "Lowest Number": get_setting('CHUNK_COUNT_MAPPING', 'Lowest_Number'),
-                        "Low Number": get_setting('CHUNK_COUNT_MAPPING', 'Low_Number'),
-                        "Mean Number": get_setting('CHUNK_COUNT_MAPPING', 'Mean_Number'),
-                        "High Number": get_setting('CHUNK_COUNT_MAPPING', 'High_Number'),
-                        "Highest Number": get_setting('CHUNK_COUNT_MAPPING', 'Highest_Number')
-                    }
-                    chunk_pref = mapping.get(chunk_count_pref_str, 0.5)
-            else:
-                if chunk_pref_raw is not None:
-                    chunk_count_pref_str = str(chunk_pref_raw).strip()
-                    mapping = {
-                        "Very Small": get_setting('CHUNK_SIZE_MAPPING', 'Very_Small'),
-                        "Small": get_setting('CHUNK_SIZE_MAPPING', 'Small'),
-                        "Medium": get_setting('CHUNK_SIZE_MAPPING', 'Medium'),
-                        "Large": get_setting('CHUNK_SIZE_MAPPING', 'Large'),
-                        "Very Large": get_setting('CHUNK_SIZE_MAPPING', 'Very_Large')
-                    }
-                    chunk_pref = mapping.get(chunk_count_pref_str, 0.5)
-
-            # Process chunk_wc_distribution with default value if not provided
-            chunk_wc_distribution = 5.0
-            if chunk_wc_distribution_raw is not None:
-                chunk_wc_distribution_str = str(chunk_wc_distribution_raw).strip()
-                mapping_dist = {
-                    "Low Variation": get_setting('CHUNK_VAR_MAPPING', 'Low_Variation'),
-                    "Average Variation": get_setting('CHUNK_VAR_MAPPING', 'Average_Variation'),
-                    "High Variation": get_setting('CHUNK_VAR_MAPPING', 'High_Variation')
-                }
-                chunk_wc_distribution = mapping_dist.get(chunk_wc_distribution_str, 5.0)
-
-            if total_proportion > 0:
-                content_rules[topic] = {
-                    'total_proportion': total_proportion,
-                    'sentiment_proportion': (c, d, e),
-                    'chunk_min_wc': chunk_min_wc,
-                    'chunk_max_wc': chunk_max_wc,
-                    'chunk_pref': chunk_pref,
-                    'chunk_wc_distribution': chunk_wc_distribution
-                }
-
-        # Process COLLECTION_RANGES sheet
-        if "COLLECTION_RANGES" not in wb.sheetnames:
-            print(f"parse_rulebook_excel: 'COLLECTION_RANGES' sheet not found in workbook: {file_path}")
-            return None
-
-        # Validate and process collection ranges
-        COLLECTION_RANGES_ws = wb["COLLECTION_RANGES"]
-        collection_ranges = []
-        for row_num, row in enumerate(COLLECTION_RANGES_ws.iter_rows(min_row=4, max_col=3, values_only=True), start=4):
-            start_val, end_val, prop_val = row[0], row[1], row[2]
-            if start_val is None:
-                break
-            if start_val is None or end_val is None or prop_val is None:
-                print(f"parse_rulebook_excel: Missing value in COLLECTION_RANGES sheet at row {row_num}.")
-                return None
-            if not isinstance(start_val, int) or not isinstance(end_val, int):
-                print(f"parse_rulebook_excel: Incorrect value type in COLLECTION_RANGES sheet at row {row_num}.")
-                return None
-
-            collection_ranges.append({
-                'range': (int(start_val), int(end_val)),
-                'target_fraction': float(prop_val)
-            })
-
-        result = {
-            'collection_mode': collection_mode,
-            'review_item': review_item,
-            'total': total,
-            'content_rules': content_rules,
-            'collection_ranges': collection_ranges
-        }
-
-        # Validate the merged rulebook values
-        if not validate_rulebook_values(result):
-            return None
-
-        # Write the JSON file
-        return write_rulebook_json(result)
-
-    except Exception as e:
-        print(f"parse_rulebook_excel: {e}")
-        return None
-
-def validate_rulebook_json(json_file_path: Path) -> Optional[Path]:
-    """
-    Validates a JSON file to ensure it adheres to the expected rulebook structure and value constraints.
-    
-    The JSON file must contain:
-      - review_item: a string
-      - collection_mode: either "word" or "chunk"
-      - total: an integer greater than 0
-      - content_rules: a dictionary with keys for each topic including:
-            - total_proportion: a number between 0 and 1
-            - sentiment_proportion: a list or tuple of three numbers (each between 0 and 1) that sum to 1
-            - chunk_min_wc: an integer > 0
-            - chunk_max_wc: an integer greater than chunk_min_wc
-            - chunk_pref: a number between 0 and 1
-            - chunk_wc_distribution: a positive number
-      - collection_ranges: a list of dictionaries, each with:
-            - range: a list or tuple of two integers [start, end] where end >= start and contiguous ranges (start equals previous end + 1)
-            - target_fraction: a number, with the sum of all target fractions equal to 1
-
-    After loading and validating the JSON data using a shared helper, the function writes the validated
-    rulebook to a new JSON file in the "_data/rulebooks/json" directory.
-
-    Args:
-        json_file_path (Path): Path to the JSON file to be validated.
-
-    Returns:
-        Optional[Path]: Full path to the newly written JSON file on success, or None if validation fails.
-    """
-    try:
-        # Validate the file path and extension
-        if not json_file_path.exists():
-            print(f"validate_rulebook_json: File does not exist: {json_file_path}")
-            return None
-        if json_file_path.suffix.lower() != ".json":
-            print(f"validate_rulebook_json: File is not a JSON file: {json_file_path}")
-            return None
-
-        # Load the JSON data
-        with open(json_file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Validate the rulebook values
-        if not validate_rulebook_values(data):
-            return None
-
-        # Write the JSON file
-        return write_rulebook_json(data)
-
-    except Exception as e:
-        print(f"validate_rulebook_json: {e}")
-        return None

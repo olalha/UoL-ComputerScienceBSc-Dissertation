@@ -1,8 +1,10 @@
 import streamlit as st
+import os
 import json
 import io
 import contextlib
-from typing import Optional, Dict, Any, Callable, Tuple
+from pathlib import Path
+from typing import Optional, Dict, Any, Callable, Tuple, Union
 
 def _handle_json_operation(operation_fn: Callable, validation_fn: Callable, *args) -> Tuple[bool, Optional[Dict], str]:
     """
@@ -36,24 +38,27 @@ def _handle_json_operation(operation_fn: Callable, validation_fn: Callable, *arg
         print(f"Error: {e}")
         return False, None, captured_output.getvalue()
 
-def load_and_validate_json(file_path: str, validation_function: Callable) -> Optional[Dict]:
+def load_and_validate_json(file_path: Union[str, Path], validation_function: Callable) -> Optional[Dict]:
     """ 
     Loads a JSON file and validates it using the provided validation function.
     
     Args:
-        file_path: Path to the JSON file
+        file_path: Path to the JSON file (str or Path object)
         validation_function: Function to validate the JSON data
         
     Returns:
         Validated JSON data as a dictionary or None if invalid
     """
+    # Convert to Path object if it's a string
+    path = Path(file_path)
+    
     # Define the load operation
-    def load_operation(path):
-        with open(path, "r", encoding="utf-8") as f:
+    def load_operation(path: Path):
+        with path.open("r", encoding="utf-8") as f:
             return json.load(f)
     
     # Use the helper function
-    success, data, output = _handle_json_operation(load_operation, validation_function, file_path)
+    success, data, output = _handle_json_operation(load_operation, validation_function, path)
     
     if success:
         return data
@@ -62,30 +67,47 @@ def load_and_validate_json(file_path: str, validation_function: Callable) -> Opt
         st.text_area("Console Output", output, height=200)
         return None
 
-def validate_and_save_json(file_path: str, json_data: dict, validation_function: Callable) -> bool:
+def validate_and_save_json(file_path: Union[str, Path], json_data: dict, validation_function: Callable) -> Optional[Path]:
     """
     Validates JSON data and saves it to the specified file path if valid.
     
     Args:
-        file_path: Path where the JSON file will be saved
+        file_path: Path where the JSON file will be saved (str or Path object)
         json_data: The JSON data to validate and save
         validation_function: Function to validate the JSON data
         
     Returns:
-        True if validation and saving succeeded, False otherwise
+        Path object if validation and saving succeeded, None otherwise
     """
+    # Convert to Path object if it's a string
+    path = Path(file_path)
+    
+    # Check if the file already exists and modify the name
+    if path.exists():
+        base_name = path.stem
+        extension = path.suffix
+        parent = path.parent
+        counter = 1
+        while True:
+            new_path = parent / f"{base_name} ({counter}){extension}"
+            if not new_path.exists():
+                path = new_path
+                break
+            counter += 1
+    
     # Define the save operation
-    def save_operation(path, data):
+    def save_operation(path: Path, data):
         if validation_function(data):
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+            with path.open("w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
         return data
     
     # Use the helper function
-    success, _, output = _handle_json_operation(save_operation, validation_function, file_path, json_data)
+    success, _, output = _handle_json_operation(save_operation, validation_function, path, json_data)
     
     if not success:
         st.error("JSON values are invalid - File was not saved.")
         st.text_area("Console Output", output, height=200)
+        return None
     
-    return success
+    return path

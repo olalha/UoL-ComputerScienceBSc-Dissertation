@@ -10,9 +10,9 @@ from typing import Optional, Tuple, Union, Any
 
 from view_components.alerter import show_alert
 from view_components.item_selector import saved_items_selector, get_items_list
-from chunk_manager.rulebook_parser import parse_rulebook_excel, validate_rulebook_json, validate_rulebook_values
+from chunk_manager.rulebook_parser import parse_rulebook_excel, validate_rulebook_values
 from utils.settings_manager import get_setting
-from view_components.file_loader import load_and_validate_json
+from view_components.file_loader import load_and_validate_json, validate_and_save_json
 
 # Display alert if it exists in session state
 if st.session_state.stored_alert:
@@ -37,9 +37,13 @@ def process_file(uploaded_file: Any) -> Tuple[Optional[Path], str]:
     with contextlib.redirect_stdout(captured_output):
         # Process based on file type
         if file_extension in ['.xlsx', '.xls', '.xlsm']:
-            result_path = parse_rulebook_excel(tmp_path)
+            rulebook = parse_rulebook_excel(tmp_path)
+            if rulebook is None:
+                return None, captured_output.getvalue()
+            result_path = Path(RB_JSON_DIR / f"{rulebook['content_title']} - {rulebook['collection_mode']} - {rulebook['total']}.json")
+            result_path = validate_and_save_json(result_path, rulebook, validate_rulebook_values)
         elif file_extension == '.json':
-            result_path = validate_rulebook_json(tmp_path)
+            result_path = load_and_validate_json(tmp_path, validate_rulebook_values)
         else:
             st.error("Unsupported file type!")
             return None, captured_output.getvalue()
@@ -70,15 +74,15 @@ def upload_file_form() -> None:
                         st.text_area("Console Output", console_output, height=200)
                     
                     # Handle processing result
-                    if result_path is None:
-                        st.error("File processing failed.")
-                    else:
+                    if result_path:
                         st.success(f"File processed successfully! Saved to {result_path}")
                         # Automatically select the newly uploaded file
                         items = get_items_list(RB_JSON_DIR)
                         new_file_name = result_path.name
                         if new_file_name in items:
-                            st.session_state["Rulebook_selected"] = new_file_name
+                            st.session_state["Rulebook_selector"] = new_file_name
+                    else:
+                        st.error("File processing failed.")
             else:
                 st.error("Please upload a file first.")
 
@@ -101,8 +105,8 @@ def display_rulebook_data(rulebook_json: dict) -> None:
         
         # Display metadata in left column
         with left_col:
-            # Display review item with full width
-            st.metric(label="Review Item", value=rulebook_json.get('review_item', ''))
+            # Display content title with full width
+            st.metric(label="Content title", value=rulebook_json.get('content_title', ''))
             
             # Create nested columns for collection mode and total
             mode_col, total_col = st.columns(2)
