@@ -15,8 +15,9 @@ if missing_vars:
 import streamlit as st
 
 # Initialize session state
-if 'stored_alert' not in st.session_state:
-    st.session_state.stored_alert = None
+from view_components.file_loader import initialize_file_cache
+initialize_file_cache()
+st.session_state.stored_alert = None
 
 # Define pages
 rulebook_page = st.Page(

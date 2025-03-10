@@ -1,60 +1,14 @@
 import streamlit as st
-import os
-import json
-import io
-import tempfile
-import contextlib
-from pathlib import Path
 import pandas as pd
-from typing import Optional, Tuple, Union, Any
 
+from typing import Union, Any
+from view_components.file_loader import load_and_validate_rulebook, process_rulebook_upload
 from view_components.alerter import show_alert
-from view_components.item_selector import saved_items_selector, get_items_list
-from chunk_manager.rulebook_parser import parse_rulebook_excel, validate_rulebook_values
-from utils.settings_manager import get_setting
-from view_components.file_loader import load_and_validate_json, validate_and_save_json
+from view_components.item_selector import saved_file_selector, change_selected_file, add_new_file_to_selector
 
 # Display alert if it exists in session state
 if st.session_state.stored_alert:
     show_alert()
-
-# Directory to store JSON rulebooks
-RB_JSON_DIR = Path(__file__).parent.parent / get_setting('PATH', 'rulebooks_json')
-RB_JSON_DIR.mkdir(parents=True, exist_ok=True)
-
-def process_file(uploaded_file: Any) -> Tuple[Optional[Path], str]:
-    """ Process uploaded rulebook file and convert to JSON format. """
-    file_extension = Path(uploaded_file.name).suffix.lower()
-    
-    # Save uploaded file to a temporary location
-    with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp:
-        tmp.write(uploaded_file.read())
-        tmp_path = Path(tmp.name)
-    
-    # Capture console output during processing
-    captured_output = io.StringIO()
-    result_path = None
-    with contextlib.redirect_stdout(captured_output):
-        # Process based on file type
-        if file_extension in ['.xlsx', '.xls', '.xlsm']:
-            rulebook = parse_rulebook_excel(tmp_path)
-            if rulebook is None:
-                return None, captured_output.getvalue()
-            result_path = Path(RB_JSON_DIR / f"{rulebook['content_title']} - {rulebook['collection_mode']} - {rulebook['total']}.json")
-            result_path = validate_and_save_json(result_path, rulebook, validate_rulebook_values)
-        elif file_extension == '.json':
-            result_path = load_and_validate_json(tmp_path, validate_rulebook_values)
-        else:
-            st.error("Unsupported file type!")
-            return None, captured_output.getvalue()
-    
-        # Clean up temporary file after processing
-        try:
-            tmp_path.unlink()
-        except Exception as e:
-            print(f"Error deleting temporary file: {e}")
-    
-    return result_path, captured_output.getvalue()
 
 def upload_file_form() -> None:
     """ Display file upload interface with processing functionality. """
@@ -68,19 +22,18 @@ def upload_file_form() -> None:
             if uploaded_file is not None:
                 with st.spinner("Processing file..."):
                     # Process the uploaded file
-                    result_path, console_output = process_file(uploaded_file)
+                    result_path, console_output = process_rulebook_upload(uploaded_file)
+                    
                     # Display console output if any
                     if console_output:
                         st.text_area("Console Output", console_output, height=200)
                     
-                    # Handle processing result
+                    # Handle upload result
                     if result_path:
                         st.success(f"File processed successfully! Saved to {result_path}")
-                        # Automatically select the newly uploaded file
-                        items = get_items_list(RB_JSON_DIR)
-                        new_file_name = result_path.name
-                        if new_file_name in items:
-                            st.session_state["Rulebook_selector"] = new_file_name
+                        print(result_path.name)
+                        add_new_file_to_selector('rulebook', result_path.name)
+                        change_selected_file('rulebook', result_path.name)
                     else:
                         st.error("File processing failed.")
             else:
@@ -194,19 +147,20 @@ upload_file_form()
 st.header("Saved Rulebooks")
 
 # Display rulebook selector
-selected_rulebook = saved_items_selector(RB_JSON_DIR, "Rulebook")
+selected_rulebook = saved_file_selector('rulebook')
 
 # Load and display selected rulebook
 if selected_rulebook:
     
     # Load and validate the selected rulebook
-    file_path = RB_JSON_DIR / selected_rulebook
-    rulebook_json = load_and_validate_json(file_path, validate_rulebook_values)
-
+    rulebook_data, console_output = load_and_validate_rulebook(selected_rulebook)
+    if console_output:
+        st.text_area("Console Output", console_output, height=200)
+    
     # Display the rulebook data
-    if rulebook_json:
+    if rulebook_data:
         st.markdown("---")
         st.info(f"{selected_rulebook}")
-        display_rulebook_data(rulebook_json)
+        display_rulebook_data(rulebook_data)
 else:
     st.info("Select a rulebook to view its contents.")

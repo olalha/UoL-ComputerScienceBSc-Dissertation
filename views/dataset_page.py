@@ -1,20 +1,14 @@
-import os
-import json
 import io
 import contextlib
 import streamlit as st
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 
-from view_components.alerter import show_alert
-from view_components.item_selector import saved_items_selector, get_items_list
-from view_components.file_loader import load_and_validate_json, validate_and_save_json
 from utils.settings_manager import get_setting
-from chunk_manager.rulebook_parser import validate_rulebook_values
-from dataset_manager.dataset_structurer import create_dataset_structure, validate_dataset_structure
+from view_components.alerter import show_alert
+from view_components.item_selector import saved_file_selector, change_selected_file, get_files_list, get_selected_file, add_new_file_to_selector
+from view_components.file_loader import load_and_validate_rulebook, validate_and_save_dataset, load_and_validate_dataset
+from dataset_manager.dataset_structurer import create_dataset_structure
 from dataset_manager.text_generator import generate_collection_text
 from dataset_manager.dataset_visualizer import plot_collection_distribution, plot_topic_distribution, plot_sentiment_pie_chart, plot_sentiment_box_plot
 from dataset_manager.dataset_analyser import get_basic_counts, get_min_max_counts, get_unique_topics, get_unique_sentiments, filter_collections
@@ -24,90 +18,72 @@ if st.session_state.stored_alert:
     show_alert()
 
 # Initialize session state for form submission
-if 'structure_form_submitted' not in st.session_state:
-    st.session_state.form_submitted = False
+if 'dataset_form_submitted' not in st.session_state:
+    st.session_state.dataset_form_submitted = False
 
-# Directory to store JSON rulebooks
-RB_JSON_DIR = Path(__file__).parent.parent / get_setting('PATH', 'rulebooks_json')
-RB_JSON_DIR.mkdir(parents=True, exist_ok=True)
-
-# Directory to store JSON datasets
-DS_JSON_DIR = Path(__file__).parent.parent / get_setting('PATH', 'datasets_json')
-DS_JSON_DIR.mkdir(parents=True, exist_ok=True)
-
-def get_rulebooks_list() -> List[str]:
-    """ Get a list of validated rulebooks for dataset generation. """
-    
-    all_rulebooks = [f for f in os.listdir(RB_JSON_DIR) if f.endswith('.json')]
-    valid_rulebooks = []
-    print("get_rulebooks_list: START SUBPROCESS - Get validated rulebooks for generation")
-    for rulebook in all_rulebooks:
-        file_path = RB_JSON_DIR / rulebook
-        
-        # Validate the rulebook
-        with open(file_path, "r", encoding="utf-8") as f:
-            if validate_rulebook_values(json.load(f)):
-                valid_rulebooks.append(rulebook)
-            else:
-                print(f"get_rulebooks_list: Invalid rulebook: {rulebook}")
-    print("get_rulebooks_list: END SUBPROCESS - Get validated rulebooks for generation")
-    return valid_rulebooks
-
-def generate_dataset_structure_form(rulebooks: List[str]) -> None:
+def generate_dataset_structure_form() -> None:
     """ Displays a form for generating dataset structures from rulebooks. """
+    
+    # Get all available rulebooks
+    rulebooks = get_files_list('rulebook')
+    if not rulebooks:
+        st.info("No rulebooks found. Please upload a rulebook first.")
+        return
     
     # Display the form for generating dataset structure
     with st.expander("Generate Dataset From Rulebook", icon="📚", expanded=True):
         with st.form(key="generate_dataset_form", border=False):
-            selected_rulebook = st.selectbox("Rulebook Selector", rulebooks)
+            dataset_selected_rulebook = st.selectbox("Rulebook Selector", rulebooks)
             st.write("Warning: Invalid rulebooks will not be displayed.")
-            solution_search_time_s = st.slider("Solution Search Time (seconds)", min_value=1, max_value=60, value=5)
+            datatset_search_time_s = st.slider("Solution Search Time (seconds)", min_value=1, max_value=60, value=5)
             submitted = st.form_submit_button("Generate Dataset Structure")
 
             if submitted:
-                st.session_state.form_submitted = True
-                st.session_state.selected_rulebook = selected_rulebook
-                st.session_state.solution_search_time_s = solution_search_time_s
+                st.session_state.dataset_form_submitted = True
+                st.session_state.dataset_selected_rulebook = dataset_selected_rulebook
+                st.session_state.datatset_search_time_s = datatset_search_time_s
 
     # When the form is submitted, generate the dataset structure
-    if st.session_state.form_submitted:
-        selected_rulebook = st.session_state.selected_rulebook
-        solution_search_time_s = st.session_state.solution_search_time_s
+    if st.session_state.dataset_form_submitted:
+        dataset_selected_rulebook = st.session_state.dataset_selected_rulebook
+        datatset_search_time_s = st.session_state.datatset_search_time_s
 
-        # Display a loading message and generate dataset structure
-        captured_output = io.StringIO()
-        with st.spinner("Generating dataset structure. Please wait...", show_time=True):
+        # Load and validate the selected rulebook
+        rulebook, console_output = load_and_validate_rulebook(dataset_selected_rulebook)
+        
+        # Display console output if any
+        if console_output:
+            st.text_area("Console Output", console_output, height=200)
+        
+        # Generate the dataset structure if the rulebook is valid
+        if rulebook:
+            with st.spinner("Generating dataset structure. Please wait...", show_time=True):
+                
+                captured_output = io.StringIO()
+                with contextlib.redirect_stdout(captured_output):
+                    # Generate dataset structure
+                    dataset = create_dataset_structure(rulebook=dataset_selected_rulebook, 
+                                                        solution_search_time_s=datatset_search_time_s)
+                
+                # Display console output if any
+                if captured_output.getvalue():
+                    st.text_area("Console Output", captured_output.getvalue, height=200)
 
-            # Read the selected rulebook (integrity already validated)
-            file_path = RB_JSON_DIR / selected_rulebook
-            with open(file_path, "r", encoding="utf-8") as f:
-                selected_rulebook = json.load(f)
-
-            # Generate dataset structure
-            print("Datasets View: START SUBPROCESS - Generate Dataset Structure")
-            result_path = None
-            with contextlib.redirect_stdout(captured_output):
-                dataset = create_dataset_structure(rulebook=selected_rulebook, solution_search_time_s=solution_search_time_s)
                 if dataset:
                     # Save the dataset structure to a JSON file
-                    meta = get_basic_counts(dataset)
-                    result_path = Path(DS_JSON_DIR / f"{dataset['content_title']} - {meta['total_wc']}wc - {meta['total_cc']}cc.json")
-                    result_path = validate_and_save_json(result_path, dataset, validate_dataset_structure)
+                    ds_meta = get_basic_counts(dataset)
+                    file_name = f"{dataset['content_title']} - {ds_meta['total_wc']}wc - {ds_meta['total_cc']}cc.json"
+                    result_path, console_output = validate_and_save_dataset(file_name, dataset)
+                    
+                    # Handle the result of saving the dataset
+                    if console_output:
+                        st.text_area("Console Output", console_output, height=200)
+                    if result_path:
+                        st.success(f"File processed successfully! Saved to {result_path}")
+                        add_new_file_to_selector('dataset', result_path.name)
+                        change_selected_file('dataset', result_path.name)
                 else:
-                    print("Datasets View: Failed to generate dataset structure.")
-            print("Datasets View: END SUBPROCESS - Generate Dataset Structure")
-
-        # Display dataset structure
-        if result_path:
-            st.success(f"File processed successfully! Saved to {result_path}")
-            # Automatically select the newly generated dataset
-            items = get_items_list(DS_JSON_DIR)
-            new_file_name = Path(result_path).name
-            if new_file_name in items:
-                st.session_state["Dataset_selector"] = new_file_name
-        else:
-            st.error("Failed to generate dataset structure. Please try again.")
-            st.text_area("Console Output", captured_output.getvalue(), height=200)
+                    st.error("Failed to generate dataset structure. Please try again.")
 
 def display_dataset_metrics(dataset: Dict[str, Any]) -> None:
     """ Display comprehensive metrics and visualizations for the dataset. """
@@ -409,7 +385,7 @@ def display_collections_table(dataset: Dict[str, Any]) -> None:
         use_container_width=True,
     )
 
-def display_text_generation_tab(file_path: str, dataset: Dict[str, Any]) -> None:
+def display_text_generation_tab(dataset: Dict[str, Any]) -> None:
     """
     Display text generation interface for a selected collection.
     
@@ -455,15 +431,23 @@ def display_text_generation_tab(file_path: str, dataset: Dict[str, Any]) -> None
     if st.button(f"{"Re-G" if collection_text else "G"}enerate Collection Text", icon="🤖"):
         # Generate text for the collection
         captured_output = io.StringIO()
-        print("""Datasets View: START SUBPROCESS - Generate Collection Text""")
         with contextlib.redirect_stdout(captured_output):
             with st.spinner("Generating collection text. Please wait...", show_time=True):
                 collection_with_generated_text = generate_collection_text(selected_collection, content_title, selected_model)
-            if collection_with_generated_text:
-                collections[col_index] = collection_with_generated_text
-                dataset["collections"] = collections
-                validate_and_save_json(file_path=file_path, json_data=dataset, validation_function=validate_dataset_structure)
-        print("""Datasets View: END SUBPROCESS - Generate Collection Text""")
+        
+        # Display console output if any
+        if captured_output.getvalue():
+            st.text_area("Console Output", captured_output.getvalue(), height=200)
+        
+        # Update the collection with generated text if successful
+        if collection_with_generated_text:
+            collections[col_index] = collection_with_generated_text
+            dataset["collections"] = collections
+            dataset, console_output = validate_and_save_dataset(get_selected_file('dataset'), dataset)
+            if console_output:
+                st.text_area("Console Output", console_output, height=200)
+            if dataset:
+                st.success("Collection text generated successfully.")
     
     st.divider()
     st.subheader("Collection Information")
@@ -527,23 +511,21 @@ st.title("Datasets")
 st.header("Generate Dataset Structure")
 
 # Display generate dataset structure form
-rulebooks = get_rulebooks_list()
-if rulebooks:
-    generate_dataset_structure_form(rulebooks)
-else:
-    st.info("No rulebooks found. Please upload a rulebook first.")
+generate_dataset_structure_form()
 
 # --- Saved Datasets Section ---
 st.header("Saved Datasets")
 
 # Display dataset selector
-selected_dataset = saved_items_selector(DS_JSON_DIR, "Dataset")
+selected_dataset = saved_file_selector('dataset')
 
 # Display selected dataset
 if selected_dataset:
-    # Validate and load the selected dataset
-    file_path = DS_JSON_DIR / selected_dataset
-    dataset = load_and_validate_json(file_path, validate_dataset_structure)
+    
+    # Load and validate the selected dataset
+    dataset, console_output = load_and_validate_dataset(selected_dataset)
+    if console_output:
+        st.text_area("Console Output", console_output, height=200)
 
     # Display dataset content
     if dataset:
@@ -551,16 +533,13 @@ if selected_dataset:
         st.info(f"{selected_dataset}")
         
         metrics_tab, collections_tab, generation_tab = st.tabs(["Dataset Metrics", "Collections Table", "Text Generation"])
-        
         with metrics_tab:
             if st.button("Caculate Metrics", icon="➗"):
                 display_dataset_metrics(dataset)
-        
         with collections_tab:
             display_collections_table(dataset)
-            
         with generation_tab:
-            display_text_generation_tab(file_path, dataset)
+            display_text_generation_tab(dataset)
         
 else:
     st.info("Generate and select a dataset to view its content.")

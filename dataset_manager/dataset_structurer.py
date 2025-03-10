@@ -58,7 +58,7 @@ def create_dataset_structure(rulebook: dict, solution_search_time_s: int) -> Opt
     # Build dataset structure and return it
     return {'content_title': rulebook['content_title'], 'collections': collections}
 
-def validate_dataset_structure(dataset_structure: dict) -> bool:
+def validate_dataset_values(dataset_structure: dict) -> bool:
     """
     Validates that a dataset structure meets all required specifications.
 

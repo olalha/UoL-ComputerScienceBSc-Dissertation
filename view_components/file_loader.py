@@ -1,10 +1,32 @@
 import streamlit as st
 import os
 import json
+import tempfile
 import io
 import contextlib
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable, Tuple, Union
+
+from utils.settings_manager import get_setting
+from dataset_manager.dataset_structurer import validate_dataset_values
+from chunk_manager.rulebook_parser import validate_rulebook_values, parse_rulebook_excel
+
+# Directory to store JSON rulebooks
+RB_JSON_DIR = Path(__file__).parent.parent / get_setting('PATH', 'rulebooks_json')
+RB_JSON_DIR.mkdir(parents=True, exist_ok=True)
+
+# Directory to store JSON datasets
+DS_JSON_DIR = Path(__file__).parent.parent / get_setting('PATH', 'datasets_json')
+DS_JSON_DIR.mkdir(parents=True, exist_ok=True)
+
+FILE_DIRS = {
+    'rulebook': RB_JSON_DIR,
+    'dataset': DS_JSON_DIR
+}
+FILE_VALIDATORS = {
+    'rulebook': validate_rulebook_values,
+    'dataset': validate_dataset_values
+}
 
 def _handle_json_operation(operation_fn: Callable, validation_fn: Callable, *args) -> Tuple[bool, Optional[Dict], str]:
     """
@@ -111,3 +133,108 @@ def validate_and_save_json(file_path: Union[str, Path], json_data: dict, validat
         return None
     
     return path
+
+def validate_directory_files(directory: Path, validation_function: Callable) -> Dict[str, bool]:
+    """
+    Validates all JSON files in a directory and returns a dictionary of filename: is_valid.
+    
+    Args:
+        directory: Directory containing JSON files
+        validation_function: Function to validate each JSON file
+        
+    Returns:
+        Dictionary mapping filenames to validation status
+    """
+    results = {}
+    
+    # Skip if directory doesn't exist
+    if not directory.exists():
+        return results
+    
+    # Validate each JSON file in the directory
+    path_parts = directory.parts
+    print(f"START SUBPROCESS - Validating JSON files in directory '{Path(*path_parts[:-1])}'")
+    for filename in directory.glob("*.json"):
+            results[filename.name] = load_and_validate_json(filename, validation_function) is not None
+    print(f"END SUBPROCESS")            
+    return results
+
+def initialize_file_cache() -> None:
+    """
+    Initialize session state cache for valid files in multiple directories.
+    
+    Args:
+        directories_and_validators: Dict mapping session_state_key to (directory_path, validation_function)
+    """
+    for state_key, directory in FILE_DIRS.items():
+        if f"{state_key}_valid_files" not in st.session_state:
+            validation_results = validate_directory_files(directory, FILE_VALIDATORS[state_key])
+            valid_files = [filename for filename, is_valid in validation_results.items() if is_valid]
+            st.session_state[f"{state_key}_valid_files"] = valid_files
+
+
+def load_and_validate_rulebook(file_name: str) -> Tuple[Optional[Path], str]:
+    """ Load and validate a rulebook JSON file by name. """
+    captured_output = io.StringIO()
+    with contextlib.redirect_stdout(captured_output):
+        result = load_and_validate_json(RB_JSON_DIR / file_name, validate_rulebook_values)
+    return (result, captured_output.getvalue())
+
+def validate_and_save_rulebook(file_name: str, rulebook: dict) -> Tuple[Optional[Path], str]:
+    """ Validate and save a rulebook JSON file to the specified path. """
+    captured_output = io.StringIO()
+    with contextlib.redirect_stdout(captured_output):
+        result = validate_and_save_json(RB_JSON_DIR / file_name, rulebook, validate_rulebook_values)
+    return (result, captured_output.getvalue())
+
+def load_and_validate_dataset(file_name: str) -> Tuple[Optional[Path], str]:
+    """ Load and validate a dataset JSON file by name. """
+    captured_output = io.StringIO()
+    with contextlib.redirect_stdout(captured_output):
+        result = load_and_validate_json(DS_JSON_DIR / file_name, validate_dataset_values)
+    return (result, captured_output.getvalue())
+
+def validate_and_save_dataset(file_name: str, dataset: dict) -> Tuple[Optional[Path], str]:
+    """ Validate and save a dataset JSON file to the specified path. """
+    captured_output = io.StringIO()
+    with contextlib.redirect_stdout(captured_output):
+        result = validate_and_save_json(DS_JSON_DIR / file_name, dataset, validate_dataset_values)
+    return (result, captured_output.getvalue())
+
+def process_rulebook_upload(uploaded_file: Any) -> Tuple[Optional[Path], str]:
+    """ Process uploaded rulebook file and convert to JSON format. """
+    file_extension = Path(uploaded_file.name).suffix.lower()
+    
+    # Save uploaded file to a temporary location
+    with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp:
+        tmp.write(uploaded_file.read())
+        tmp_path = Path(tmp.name)
+    
+    # Capture console output during processing
+    captured_output = io.StringIO()
+    with contextlib.redirect_stdout(captured_output):
+        
+        rulebook = None
+        # Process Excel rulebook files
+        if file_extension in ['.xlsx', '.xls', '.xlsm']:
+            rulebook = parse_rulebook_excel(tmp_path)
+        # Process JSON rulebook files
+        elif file_extension == '.json':
+            rulebook = load_and_validate_json(tmp_path, validate_rulebook_values)
+        # Unsupported file type
+        else:
+            st.error("Unsupported file type!")
+            return None, captured_output.getvalue()
+
+        # Check if rulebook data has been loaded successfully
+        if rulebook is None:
+            return None, captured_output.getvalue()
+        
+        try:
+            tmp_path.unlink()
+        except Exception as e:
+            print(f"Error deleting temporary file: {e}")
+        
+        # Save rulebook data to JSON file
+        file_name = f"{rulebook['content_title']} - {rulebook['collection_mode']} - {rulebook['total']}.json"
+        return validate_and_save_rulebook(file_name, rulebook)
