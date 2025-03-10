@@ -62,12 +62,12 @@ def generate_dataset_structure_form() -> None:
                 captured_output = io.StringIO()
                 with contextlib.redirect_stdout(captured_output):
                     # Generate dataset structure
-                    dataset = create_dataset_structure(rulebook=dataset_selected_rulebook, 
+                    dataset = create_dataset_structure(rulebook=rulebook, 
                                                         solution_search_time_s=datatset_search_time_s)
                 
                 # Display console output if any
                 if captured_output.getvalue():
-                    st.text_area("Console Output", captured_output.getvalue, height=200)
+                    st.text_area("Console Output", captured_output.getvalue(), height=200)
 
                 if dataset:
                     # Save the dataset structure to a JSON file
