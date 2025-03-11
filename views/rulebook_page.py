@@ -4,11 +4,18 @@ import pandas as pd
 from typing import Union, Any
 from view_components.file_loader import load_and_validate_rulebook, process_rulebook_upload
 from view_components.alerter import show_alert
-from view_components.item_selector import saved_file_selector, change_selected_file, add_new_file_to_selector
+from view_components.item_selector import saved_file_selector, add_new_file_and_select
 
 # Display alert if it exists in session state
-if st.session_state.stored_alert:
+if 'stored_alert' in st.session_state and st.session_state.stored_alert:
     show_alert()
+
+if "counter" not in st.session_state:
+    st.session_state.counter = 0
+
+st.session_state.counter += 1
+
+st.subheader(f"This page has run {st.session_state.counter} times.")
 
 def upload_file_form() -> None:
     """ Display file upload interface with processing functionality. """
@@ -30,10 +37,7 @@ def upload_file_form() -> None:
                     
                     # Handle upload result
                     if result_path:
-                        st.success(f"File processed successfully! Saved to {result_path}")
-                        print(result_path.name)
-                        add_new_file_to_selector('rulebook', result_path.name)
-                        change_selected_file('rulebook', result_path.name)
+                        add_new_file_and_select(result_path.name, 'rulebook')
                     else:
                         st.error("File processing failed.")
             else:

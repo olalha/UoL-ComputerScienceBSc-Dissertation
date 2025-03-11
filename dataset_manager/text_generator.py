@@ -59,8 +59,6 @@ def generate_collection_text(collection: list[dict], review_item: str, model: st
         prompt = render_prompt("usr_collection_gen.html", prompt_context)
         messages_json = [{'role': 'user', 'content': prompt}]
         
-        print(messages_json)
-        
         collection_gen_response = prompt_openai_llm_single(model=model, messages=messages_json)
         
         generated_text_collection = None
@@ -69,8 +67,6 @@ def generate_collection_text(collection: list[dict], review_item: str, model: st
                 generated_text_collection = collection_gen_response['response']['choices'][0]['message']['content']
             except Exception as e:
                 pass
-        
-        print(generated_text_collection)
         
         if generated_text_collection:
             collection['collection_text'] = generated_text_collection

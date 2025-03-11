@@ -2,24 +2,27 @@ import io
 import contextlib
 import streamlit as st
 import pandas as pd
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, Any
 
 from utils.settings_manager import get_setting
 from view_components.alerter import show_alert
-from view_components.item_selector import saved_file_selector, change_selected_file, get_files_list, get_selected_file, add_new_file_to_selector
+from view_components.item_selector import saved_file_selector, get_files_list, get_selected_file, add_new_file_and_select
 from view_components.file_loader import load_and_validate_rulebook, validate_and_save_dataset, load_and_validate_dataset
 from dataset_manager.dataset_structurer import create_dataset_structure
 from dataset_manager.text_generator import generate_collection_text
 from dataset_manager.dataset_visualizer import plot_collection_distribution, plot_topic_distribution, plot_sentiment_pie_chart, plot_sentiment_box_plot
-from dataset_manager.dataset_analyser import get_basic_counts, get_min_max_counts, get_unique_topics, get_unique_sentiments, filter_collections
+from dataset_manager.dataset_analyser import get_basic_counts, get_min_max_counts, get_unique_topics, get_unique_sentiments, get_collection_metrics, filter_collections
 
 # Display alert if it exists in session state
-if st.session_state.stored_alert:
+if 'stored_alert' in st.session_state and st.session_state.stored_alert:
     show_alert()
+    
+if "counter" not in st.session_state:
+    st.session_state.counter = 0
 
-# Initialize session state for form submission
-if 'dataset_form_submitted' not in st.session_state:
-    st.session_state.dataset_form_submitted = False
+st.session_state.counter += 1
+
+st.subheader(f"This page has run {st.session_state.counter} times.")
 
 def generate_dataset_structure_form() -> None:
     """ Displays a form for generating dataset structures from rulebooks. """
@@ -33,23 +36,15 @@ def generate_dataset_structure_form() -> None:
     # Display the form for generating dataset structure
     with st.expander("Generate Dataset From Rulebook", icon="📚", expanded=True):
         with st.form(key="generate_dataset_form", border=False):
-            dataset_selected_rulebook = st.selectbox("Rulebook Selector", rulebooks)
+            rulebook_for_dataset = st.selectbox("Rulebook Selector", rulebooks)
             st.write("Warning: Invalid rulebooks will not be displayed.")
-            datatset_search_time_s = st.slider("Solution Search Time (seconds)", min_value=1, max_value=60, value=5)
+            search_time_for_dataset = st.slider("Solution Search Time (seconds)", min_value=1, max_value=60, value=5)
             submitted = st.form_submit_button("Generate Dataset Structure")
 
-            if submitted:
-                st.session_state.dataset_form_submitted = True
-                st.session_state.dataset_selected_rulebook = dataset_selected_rulebook
-                st.session_state.datatset_search_time_s = datatset_search_time_s
-
-    # When the form is submitted, generate the dataset structure
-    if st.session_state.dataset_form_submitted:
-        dataset_selected_rulebook = st.session_state.dataset_selected_rulebook
-        datatset_search_time_s = st.session_state.datatset_search_time_s
-
+    # Process the form submission
+    if submitted:
         # Load and validate the selected rulebook
-        rulebook, console_output = load_and_validate_rulebook(dataset_selected_rulebook)
+        rulebook, console_output = load_and_validate_rulebook(rulebook_for_dataset)
         
         # Display console output if any
         if console_output:
@@ -59,11 +54,10 @@ def generate_dataset_structure_form() -> None:
         if rulebook:
             with st.spinner("Generating dataset structure. Please wait...", show_time=True):
                 
+                # Generate dataset structure and capture console output
                 captured_output = io.StringIO()
                 with contextlib.redirect_stdout(captured_output):
-                    # Generate dataset structure
-                    dataset = create_dataset_structure(rulebook=rulebook, 
-                                                        solution_search_time_s=datatset_search_time_s)
+                    dataset = create_dataset_structure(rulebook=rulebook, solution_search_time_s=search_time_for_dataset)
                 
                 # Display console output if any
                 if captured_output.getvalue():
@@ -73,15 +67,13 @@ def generate_dataset_structure_form() -> None:
                     # Save the dataset structure to a JSON file
                     ds_meta = get_basic_counts(dataset)
                     file_name = f"{dataset['content_title']} - {ds_meta['total_wc']}wc - {ds_meta['total_cc']}cc.json"
-                    result_path, console_output = validate_and_save_dataset(file_name, dataset)
+                    result_path, console_output = validate_and_save_dataset(file_name, dataset, overwrite=False)
                     
                     # Handle the result of saving the dataset
                     if console_output:
                         st.text_area("Console Output", console_output, height=200)
                     if result_path:
-                        st.success(f"File processed successfully! Saved to {result_path}")
-                        add_new_file_to_selector('dataset', result_path.name)
-                        change_selected_file('dataset', result_path.name)
+                        add_new_file_and_select(result_path.name, 'dataset')
                 else:
                     st.error("Failed to generate dataset structure. Please try again.")
 
@@ -443,23 +435,23 @@ def display_text_generation_tab(dataset: Dict[str, Any]) -> None:
         if collection_with_generated_text:
             collections[col_index] = collection_with_generated_text
             dataset["collections"] = collections
-            dataset, console_output = validate_and_save_dataset(get_selected_file('dataset'), dataset)
+            dataset_path, console_output = validate_and_save_dataset(get_selected_file('dataset'), dataset, overwrite=True)
             if console_output:
                 st.text_area("Console Output", console_output, height=200)
-            if dataset:
+            if dataset_path:
                 st.success("Collection text generated successfully.")
     
     st.divider()
     st.subheader("Collection Information")
     
     # Display the generated text
-    collection_text = selected_collection.get("collection_text", "")
+    collection_text = selected_collection.get("collection_text")
     if collection_text:
         with st.expander("Collection Text", expanded=True, icon="💬"):
             st.markdown(collection_text)
     
-    
     # Display metrics for the selected collection
+    collection_meta = get_collection_metrics(dataset, col_index)
     with st.container(border=True):
         cols = st.columns([2, 1, 2, 2, 2])
         with cols[0]:
@@ -467,9 +459,9 @@ def display_text_generation_tab(dataset: Dict[str, Any]) -> None:
         with cols[1]:
             st.empty()
         with cols[2]:
-            st.metric("Chunk Count", selected_collection.get("collection_cc", 0))
+            st.metric("Chunk Count", collection_meta.get("collection_cc", "Error"))
         with cols[3]:
-            st.metric("Given Word Count", selected_collection.get("collection_wc", 0))
+            st.metric("Given Word Count", collection_meta.get("collection_wc", "Error"))
         with cols[4]:
             collection_text_len = len(str(selected_collection.get("collection_text", "")).split())
             st.metric("Actual Word Count", collection_text_len if collection_text_len > 1 else "N/A")
@@ -523,23 +515,23 @@ selected_dataset = saved_file_selector('dataset')
 if selected_dataset:
     
     # Load and validate the selected dataset
-    dataset, console_output = load_and_validate_dataset(selected_dataset)
+    dataset_structure, console_output = load_and_validate_dataset(selected_dataset)
     if console_output:
         st.text_area("Console Output", console_output, height=200)
 
     # Display dataset content
-    if dataset:
+    if dataset_structure:
         st.markdown("---")
         st.info(f"{selected_dataset}")
         
         metrics_tab, collections_tab, generation_tab = st.tabs(["Dataset Metrics", "Collections Table", "Text Generation"])
         with metrics_tab:
             if st.button("Caculate Metrics", icon="➗"):
-                display_dataset_metrics(dataset)
+                display_dataset_metrics(dataset_structure)
         with collections_tab:
-            display_collections_table(dataset)
+            display_collections_table(dataset_structure)
         with generation_tab:
-            display_text_generation_tab(dataset)
+            display_text_generation_tab(dataset_structure)
         
 else:
     st.info("Generate and select a dataset to view its content.")

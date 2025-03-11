@@ -274,7 +274,6 @@ def simulated_annealing(initial_state, collections, value_extractor, time_limit=
     cooling_rate = 0.999
     iteration = 0
     if max_iter is None:
-        print(f"simulated_annealing: Starting search for {time_limit} seconds.")
         max_iter = float('inf')
     else:
         print(f"simulated_annealing: Starting search for {time_limit} seconds or {max_iter} iterations.")
@@ -292,8 +291,8 @@ def simulated_annealing(initial_state, collections, value_extractor, time_limit=
                 best_state = copy.deepcopy(neighbor)
                 best_cost = new_cost
         T *= cooling_rate
-    if time.time() - start_time >= time_limit or iteration >= max_iter:
-        print("simulated_annealing: Search time limit has been hit - Returning best found solution.")
+    
+    # Return the best state found
     return best_state
 
 """ Main Function """

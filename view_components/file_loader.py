@@ -82,14 +82,9 @@ def load_and_validate_json(file_path: Union[str, Path], validation_function: Cal
     # Use the helper function
     success, data, output = _handle_json_operation(load_operation, validation_function, path)
     
-    if success:
-        return data
-    else:
-        st.error("JSON values are invalid - Please delete and re-upload the corrected file.")
-        st.text_area("Console Output", output, height=200)
-        return None
+    return data if success else None, output
 
-def validate_and_save_json(file_path: Union[str, Path], json_data: dict, validation_function: Callable) -> Optional[Path]:
+def validate_and_save_json(file_path: Union[str, Path], json_data: dict, validation_function: Callable, overwrite: bool = False) -> Optional[Path]:
     """
     Validates JSON data and saves it to the specified file path if valid.
     
@@ -105,7 +100,7 @@ def validate_and_save_json(file_path: Union[str, Path], json_data: dict, validat
     path = Path(file_path)
     
     # Check if the file already exists and modify the name
-    if path.exists():
+    if not overwrite and path.exists():
         base_name = path.stem
         extension = path.suffix
         parent = path.parent
@@ -127,12 +122,7 @@ def validate_and_save_json(file_path: Union[str, Path], json_data: dict, validat
     # Use the helper function
     success, _, output = _handle_json_operation(save_operation, validation_function, path, json_data)
     
-    if not success:
-        st.error("JSON values are invalid - File was not saved.")
-        st.text_area("Console Output", output, height=200)
-        return None
-    
-    return path
+    return path if success else None, output
 
 def validate_directory_files(directory: Path, validation_function: Callable) -> Dict[str, bool]:
     """
@@ -173,33 +163,21 @@ def initialize_file_cache() -> None:
             st.session_state[f"{state_key}_valid_files"] = valid_files
 
 
-def load_and_validate_rulebook(file_name: str) -> Tuple[Optional[Path], str]:
+def load_and_validate_rulebook(file_name: str) -> Tuple[Optional[Dict], str]:
     """ Load and validate a rulebook JSON file by name. """
-    captured_output = io.StringIO()
-    with contextlib.redirect_stdout(captured_output):
-        result = load_and_validate_json(RB_JSON_DIR / file_name, validate_rulebook_values)
-    return (result, captured_output.getvalue())
+    return load_and_validate_json(RB_JSON_DIR / file_name, validate_rulebook_values)
 
-def validate_and_save_rulebook(file_name: str, rulebook: dict) -> Tuple[Optional[Path], str]:
+def validate_and_save_rulebook(file_name: str, rulebook: dict, overwrite: bool = False) -> Tuple[Optional[Path], str]:
     """ Validate and save a rulebook JSON file to the specified path. """
-    captured_output = io.StringIO()
-    with contextlib.redirect_stdout(captured_output):
-        result = validate_and_save_json(RB_JSON_DIR / file_name, rulebook, validate_rulebook_values)
-    return (result, captured_output.getvalue())
+    return validate_and_save_json(RB_JSON_DIR / file_name, rulebook, validate_rulebook_values, overwrite)
 
-def load_and_validate_dataset(file_name: str) -> Tuple[Optional[Path], str]:
+def load_and_validate_dataset(file_name: str) -> Tuple[Optional[Dict], str]:
     """ Load and validate a dataset JSON file by name. """
-    captured_output = io.StringIO()
-    with contextlib.redirect_stdout(captured_output):
-        result = load_and_validate_json(DS_JSON_DIR / file_name, validate_dataset_values)
-    return (result, captured_output.getvalue())
+    return load_and_validate_json(DS_JSON_DIR / file_name, validate_dataset_values)
 
-def validate_and_save_dataset(file_name: str, dataset: dict) -> Tuple[Optional[Path], str]:
+def validate_and_save_dataset(file_name: str, dataset: dict, overwrite: bool = False) -> Tuple[Optional[Path], str]:
     """ Validate and save a dataset JSON file to the specified path. """
-    captured_output = io.StringIO()
-    with contextlib.redirect_stdout(captured_output):
-        result = validate_and_save_json(DS_JSON_DIR / file_name, dataset, validate_dataset_values)
-    return (result, captured_output.getvalue())
+    return validate_and_save_json(DS_JSON_DIR / file_name, dataset, validate_dataset_values, overwrite)
 
 def process_rulebook_upload(uploaded_file: Any) -> Tuple[Optional[Path], str]:
     """ Process uploaded rulebook file and convert to JSON format. """
@@ -223,18 +201,19 @@ def process_rulebook_upload(uploaded_file: Any) -> Tuple[Optional[Path], str]:
             rulebook = load_and_validate_json(tmp_path, validate_rulebook_values)
         # Unsupported file type
         else:
-            st.error("Unsupported file type!")
+            print("process_rulebook_upload: Unsupported file type - Please upload an Excel or JSON file.")
             return None, captured_output.getvalue()
 
         # Check if rulebook data has been loaded successfully
         if rulebook is None:
+            print("process_rulebook_upload: Error loading rulebook data - Please check the file format and contents.")
             return None, captured_output.getvalue()
         
         try:
             tmp_path.unlink()
-        except Exception as e:
-            print(f"Error deleting temporary file: {e}")
+        except Exception:
+            print(f"process_rulebook_upload: Error deleting temporary file.")
         
         # Save rulebook data to JSON file
         file_name = f"{rulebook['content_title']} - {rulebook['collection_mode']} - {rulebook['total']}.json"
-        return validate_and_save_rulebook(file_name, rulebook)
+        return validate_and_save_rulebook(file_name, rulebook, overwrite=False)
