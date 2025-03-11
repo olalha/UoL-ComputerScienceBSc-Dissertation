@@ -80,7 +80,6 @@ def add_new_file_and_select(new_item: str, item_type: str) -> bool:
     st.error(f"Code Error: {item_type} not in FILE_DIRS.")
     return False
 
-@st.fragment
 def saved_file_selector(item_type: str) -> Optional[str]:
     """ Display the saved items selector and handle delete/rename actions. """
     

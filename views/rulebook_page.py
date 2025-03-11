@@ -3,12 +3,7 @@ import pandas as pd
 
 from typing import Union, Any
 from view_components.file_loader import load_and_validate_rulebook, process_rulebook_upload
-from view_components.alerter import show_alert
 from view_components.item_selector import saved_file_selector, add_new_file_and_select
-
-# Display alert if it exists in session state
-if 'stored_alert' in st.session_state and st.session_state.stored_alert:
-    show_alert()
 
 if "counter" not in st.session_state:
     st.session_state.counter = 0

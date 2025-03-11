@@ -17,7 +17,6 @@ import streamlit as st
 # Initialize session state
 from view_components.file_loader import initialize_file_cache
 initialize_file_cache()
-st.session_state.stored_alert = None
 
 # Define pages
 rulebook_page = st.Page(

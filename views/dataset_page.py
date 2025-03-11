@@ -5,17 +5,12 @@ import pandas as pd
 from typing import Dict, Any
 
 from utils.settings_manager import get_setting
-from view_components.alerter import show_alert
 from view_components.item_selector import saved_file_selector, get_files_list, get_selected_file, add_new_file_and_select
 from view_components.file_loader import load_and_validate_rulebook, validate_and_save_dataset, load_and_validate_dataset
 from dataset_manager.dataset_structurer import create_dataset_structure
 from dataset_manager.text_generator import generate_collection_text
 from dataset_manager.dataset_visualizer import plot_collection_distribution, plot_topic_distribution, plot_sentiment_pie_chart, plot_sentiment_box_plot
 from dataset_manager.dataset_analyser import get_basic_counts, get_min_max_counts, get_unique_topics, get_unique_sentiments, get_collection_metrics, filter_collections
-
-# Display alert if it exists in session state
-if 'stored_alert' in st.session_state and st.session_state.stored_alert:
-    show_alert()
     
 if "counter" not in st.session_state:
     st.session_state.counter = 0
