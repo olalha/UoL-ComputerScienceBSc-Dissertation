@@ -11,13 +11,6 @@ from dataset_manager.dataset_structurer import create_dataset_structure
 from dataset_manager.text_generator import generate_collection_text
 from dataset_manager.dataset_visualizer import plot_collection_distribution, plot_topic_distribution, plot_sentiment_pie_chart, plot_sentiment_box_plot
 from dataset_manager.dataset_analyser import get_basic_counts, get_min_max_counts, get_unique_topics, get_unique_sentiments, get_collection_metrics, filter_collections
-    
-if "counter" not in st.session_state:
-    st.session_state.counter = 0
-
-st.session_state.counter += 1
-
-st.subheader(f"This page has run {st.session_state.counter} times.")
 
 def generate_dataset_structure_form() -> None:
     """ Displays a form for generating dataset structures from rulebooks. """

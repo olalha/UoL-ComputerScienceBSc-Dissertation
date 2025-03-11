@@ -5,13 +5,6 @@ from typing import Union, Any
 from view_components.file_loader import load_and_validate_rulebook, process_rulebook_upload
 from view_components.item_selector import saved_file_selector, add_new_file_and_select
 
-if "counter" not in st.session_state:
-    st.session_state.counter = 0
-
-st.session_state.counter += 1
-
-st.subheader(f"This page has run {st.session_state.counter} times.")
-
 def upload_file_form() -> None:
     """ Display file upload interface with processing functionality. """
     
