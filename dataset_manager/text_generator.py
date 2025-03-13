@@ -1,19 +1,94 @@
-
 import asyncio
 
-from typing import Optional
+from typing import Optional, List, Dict
 from prompt_manager.prompt_builder import render_prompt
 from utils.api_request_handler import prompt_openai_llm_parallel, prompt_openai_llm_single
 
-def generate_collection_text(collection: list[dict], review_item: str, model: str) -> Optional[list[dict]]:
+async def generate_chunk_text(chunk: dict, review_item: str, model: str) -> Optional[str]:
+    """
+    Asynchronously generates text for a single chunk.
     
+    Args:
+        chunk (dict): The chunk to generate text for
+        review_item (str): The item being reviewed
+        model (str): The LLM model to use
+        
+    Returns:
+        Optional[str]: Generated text for the chunk or None if generation failed
+    """
+    chunk_dict = chunk['chunk_dict']
+    
+    # Create prompt for this chunk
+    prompt_context = {
+        'review_item': review_item,
+        'topic': chunk_dict['topic'],
+        'sentiment': chunk_dict['sentiment'],
+        'word_count': chunk_dict['wc']
+    }
+    
+    prompt = render_prompt("usr_chunk_gen.html", prompt_context)
+    if not prompt:
+        return None
+        
+    messages_json = [{'role': 'user', 'content': prompt}]
+    
+    # Send to LLM API
+    response = await prompt_openai_llm_single(model=model, messages=messages_json)
+    
+    if response['success']:
+        try:
+            return response['response']['choices'][0]['message']['content']
+        except Exception:
+            return None
+    
+    return None
+
+async def generate_collection_text_from_chunks(chunks_texts: List[str], model: str) -> Optional[str]:
+    """
+    Asynchronously generates collection text from existing chunk texts.
+    
+    Args:
+        chunks_texts (List[str]): The texts from all chunks
+        model (str): The LLM model to use
+        
+    Returns:
+        Optional[str]: Generated collection text or None if generation failed
+    """
+    # Generate collection text
+    prompt_context = {'chunks': chunks_texts}
+    prompt = render_prompt("usr_collection_gen.html", prompt_context)
+    if not prompt:
+        return None
+        
+    messages_json = [{'role': 'user', 'content': prompt}]
+    response = await prompt_openai_llm_single(model=model, messages=messages_json)
+    
+    if response['success']:
+        try:
+            return response['response']['choices'][0]['message']['content']
+        except Exception:
+            return None
+    
+    return None
+
+async def generate_collection_text(collection: dict, review_item: str, model: str) -> Optional[dict]:
+    """
+    Asynchronously generates text for individual chunks and then combines them into a collection text.
+    
+    Args:
+        collection (dict): The collection with chunks to generate text for
+        review_item (str): The item being reviewed
+        model (str): The LLM model to use
+        
+    Returns:
+        Optional[dict]: Updated collection with generated text or None if generation failed
+    """
+    # Step 1: Generate text for all chunks in parallel
     all_chunk_messages = []
     
-    # Generate prompt for each chunk
     for i, chunk in enumerate(collection['chunks']):
         chunk_dict = chunk['chunk_dict']
         
-        # Generate prompt
         prompt_context = {
             'review_item': review_item,
             'topic': chunk_dict['topic'],
@@ -21,62 +96,36 @@ def generate_collection_text(collection: list[dict], review_item: str, model: st
             'word_count': chunk_dict['wc']
         }
         prompt = render_prompt("usr_chunk_gen.html", prompt_context)
+        if not prompt:
+            return None
         messages_json = [{'role': 'user', 'content': prompt}]
         all_chunk_messages.append(messages_json)
     
-    # Generate text for all chunks
-    async def get_chunks_text():
-        return await prompt_openai_llm_parallel(model=model, messages=all_chunk_messages)
+    # Generate text for all chunks in parallel
+    chunks_gen_responses = await prompt_openai_llm_parallel(model=model, messages=all_chunk_messages)
     
-    chunks_gen_responses = asyncio.run(get_chunks_text())
-    
-    # Update all chunks with generated text
+    # Step 2: Process chunk responses and update collection
     chunk_texts = []
     for r in chunks_gen_responses:
         chunk_idx = r['idx']
         
-        # Extract generated text
-        generated_text_chunk = None
         if r['success']:
             try:
                 generated_text_chunk = r['response']['choices'][0]['message']['content']
-            except Exception as e:
-                pass
-        
-        if generated_text_chunk:
-            collection['chunks'][chunk_idx]['chunk_text'] = generated_text_chunk
-            chunk_texts.append(generated_text_chunk)
+                collection['chunks'][chunk_idx]['chunk_text'] = generated_text_chunk
+                chunk_texts.append(generated_text_chunk)
+            except Exception:
+                return None
         else:
-            print(f"generate_collection_text: Failed to generate text for chunk {chunk_idx}")
             return None
     
-    # Generate collection text if all chunks are successful
+    # Step 3: Generate collection text from chunk texts
     if len(chunk_texts) == len(collection['chunks']):
-        
-        prompt_context = {
-            'chunks': chunk_texts
-        }
-        prompt = render_prompt("usr_collection_gen.html", prompt_context)
-        messages_json = [{'role': 'user', 'content': prompt}]
-        
-        collection_gen_response = prompt_openai_llm_single(model=model, messages=messages_json)
-        
-        generated_text_collection = None
-        if collection_gen_response['success']:
-            try:
-                generated_text_collection = collection_gen_response['response']['choices'][0]['message']['content']
-            except Exception as e:
-                pass
-        
-        if generated_text_collection:
-            collection['collection_text'] = generated_text_collection
-        else:
-            print(f"generate_collection_text: Failed to generate collection text from {len(chunk_texts)} chunks")
+        collection_text = await generate_collection_text_from_chunks(chunk_texts, model)
+        if not collection_text:
             return None
         
+        collection['collection_text'] = collection_text
         return collection
-    else:
-        print("generate_collection_text: Failed to generate text for all chunks")
-        return None
-        
-        
+    
+    return None

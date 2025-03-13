@@ -1,6 +1,8 @@
+import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from copy import deepcopy
 from typing import Dict, Any, List, Optional
 
 from dataset_manager.dataset_analyser import (
@@ -23,6 +25,40 @@ EDGE_WIDTH = 1
 GRID_ALPHA = 0.7
 FIG_SIZE = (6, 4)
 
+def get_dataset_copy_without_text(dataset: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Removes text content from chunks and collections in the dataset.
+    
+    This function sets all 'chunk_text' and 'collection_text' fields to null
+    while preserving the metrics data. Used for caching purposes to prevent
+    unnecessary recalculation of metrics when only text content changes in
+    the dataset.
+    
+    Args:
+        dataset: The dataset JSON object
+        
+    Returns:
+        Dict[str, Any]: The dataset with text content removed
+    """
+    if not dataset or "collections" not in dataset:
+        return dataset
+    
+    # Create a deep copy to avoid modifying the original dataset
+    processed_dataset = deepcopy(dataset)
+    
+    # Process each collection
+    for collection in processed_dataset.get("collections", []):
+        # Set collection text to null
+        collection["collection_text"] = None
+        
+        # Process each chunk in the collection
+        for chunk in collection.get("chunks", []):
+            # Set chunk text to null
+            chunk["chunk_text"] = None
+    
+    return processed_dataset
+
+@st.cache_data
 def plot_collection_distribution(dataset: Dict[str, Any], mode: str) -> Optional[plt.Figure]:
     """
     Create a stacked bar chart showing sentiment distribution by collection.
@@ -92,6 +128,7 @@ def plot_collection_distribution(dataset: Dict[str, Any], mode: str) -> Optional
     
     return fig
 
+@st.cache_data
 def plot_topic_distribution(dataset: Dict[str, Any], mode: str = "chunk") -> Optional[plt.Figure]:
     """
     Create a stacked bar chart showing sentiment distribution by topic.
@@ -178,8 +215,7 @@ def plot_topic_distribution(dataset: Dict[str, Any], mode: str = "chunk") -> Opt
     
     return fig
 
-# The original plot_size_distribution function can be removed
-
+@st.cache_data
 def plot_sentiment_pie_chart(dataset: Dict[str, Any], mode: str) -> Optional[plt.Figure]:
     """
     Create a pie chart showing sentiment distribution by either chunk count or word count.
@@ -237,6 +273,7 @@ def plot_sentiment_pie_chart(dataset: Dict[str, Any], mode: str) -> Optional[plt
     plt.tight_layout()
     return fig
 
+@st.cache_data
 def plot_sentiment_box_plot(dataset: Dict[str, Any]) -> Optional[plt.Figure]:
     """ 
     Create a box plot representing the word count distribution of chunks grouped by sentiment. 

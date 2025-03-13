@@ -2,6 +2,7 @@ import io
 import contextlib
 import streamlit as st
 import pandas as pd
+import asyncio
 from typing import Dict, Any
 
 from utils.settings_manager import get_setting
@@ -9,8 +10,8 @@ from view_components.item_selector import saved_file_selector, get_files_list, g
 from view_components.file_loader import load_and_validate_rulebook, validate_and_save_dataset, load_and_validate_dataset
 from dataset_manager.dataset_structurer import create_dataset_structure
 from dataset_manager.text_generator import generate_collection_text
-from dataset_manager.dataset_visualizer import plot_collection_distribution, plot_topic_distribution, plot_sentiment_pie_chart, plot_sentiment_box_plot
-from dataset_manager.dataset_analyser import get_basic_counts, get_min_max_counts, get_unique_topics, get_unique_sentiments, get_collection_metrics, filter_collections
+from dataset_manager.dataset_visualizer import plot_collection_distribution, plot_topic_distribution, plot_sentiment_pie_chart, plot_sentiment_box_plot, get_dataset_copy_without_text
+from dataset_manager.dataset_analyser import get_basic_counts, get_text_presence_percentages, get_min_max_counts, get_unique_topics, get_unique_sentiments, get_collection_metrics, filter_collections
 
 def generate_dataset_structure_form() -> None:
     """ Displays a form for generating dataset structures from rulebooks. """
@@ -71,80 +72,97 @@ def display_dataset_metrics(dataset: Dict[str, Any]) -> None:
     st.subheader("Dataset Metrics")
     with st.container(border=True):
         
-        # Use a spinner while generating all visualizations
-        with st.spinner("Calculating metrics and generating visualizations..."):
-            # Pre-generate all visualizations
-            visualizations = {
-                # Collection Distribution
-                'collection_chunk': plot_collection_distribution(dataset, mode='chunk'),
-                'collection_word': plot_collection_distribution(dataset, mode='word'),
-                
-                # Topic Distribution
-                'topic_chunk': plot_topic_distribution(dataset, mode='chunk'),
-                'topic_word': plot_topic_distribution(dataset, mode='word'),
-                
-                # Sentiment Distribution
-                'sentiment_chunk': plot_sentiment_pie_chart(dataset, mode='chunk'),
-                'sentiment_word': plot_sentiment_pie_chart(dataset, mode='word'),
-                
-                # Word Count Box Plot
-                'word_count_box': plot_sentiment_box_plot(dataset)
-            }
+        # Get basic metrics
+        meta = get_basic_counts(dataset)
+        meta.update(get_text_presence_percentages(dataset))
         
-            # Collection Size Distribution (Stacked Bar Chart)
-            with st.expander("Collection Size Distribution", expanded=False, icon="📈"):
-                st.subheader("Collection Size Distribution")
-                tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
-                with tab1:
-                    if visualizations['collection_chunk']:
-                        st.pyplot(visualizations['collection_chunk'])
-                    else:
-                        st.info("No chunk count distribution data available by collection.")
-                    
-                with tab2:
-                    if visualizations['collection_word']:
-                        st.pyplot(visualizations['collection_word'])
-                    else:
-                        st.info("No word count distribution data available by collection.")
+        cols = st.columns([2, 2, 2, 2, 2])
+        with cols[0]:
+            st.metric("Total Collections", meta.get("collections_count", 0))
+        with cols[1]:
+            st.metric("Total Chunks", meta.get("total_cc", 0))
+        with cols[2]:
+            st.metric("Total Words", meta.get("total_wc", 0))
+        with cols[3]:
+            st.metric("Chunks w/ Text", f"{meta.get("chunks_text_percent"):.1f}%")
+        with cols[4]:
+            st.metric("Collections w/ Text", f"{meta.get("collections_text_percent"):.1f}%")
+        
+        # Retrieve textless dataset for increased cache hits when preparing visualizations
+        ds_without_text = get_dataset_copy_without_text(dataset)
+        
+        # Pre-generate all visualizations
+        visualizations = {
+            # Collection Distribution
+            'collection_chunk': plot_collection_distribution(ds_without_text, mode='chunk'),
+            'collection_word': plot_collection_distribution(ds_without_text, mode='word'),
             
-            # Topic Coverage Distribution (Stacked Bar Chart)
-            with st.expander("Topic Coverage Distribution", expanded=False, icon="💬"):
-                st.subheader("Topic Coverage Distribution")
-                tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
-                with tab1:
-                    if visualizations['topic_chunk']:
-                        st.pyplot(visualizations['topic_chunk'])
-                    else:
-                        st.info("No chunk count distribution data available by topic.")
-                    
-                with tab2:
-                    if visualizations['topic_word']:
-                        st.pyplot(visualizations['topic_word'])
-                    else:
-                        st.info("No word count distribution data available by topic.")
+            # Topic Distribution
+            'topic_chunk': plot_topic_distribution(ds_without_text, mode='chunk'),
+            'topic_word': plot_topic_distribution(ds_without_text, mode='word'),
             
-            # Overall Sentiment Distribution (Pie Charts and Box Plot)
-            with st.expander("Overall Sentiment Distribution", expanded=False, icon="😃"):
-                st.subheader("Overall Sentiment Distribution")
-                tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
-                with tab1:
-                    if visualizations['sentiment_chunk']:
-                        st.pyplot(visualizations['sentiment_chunk'])
-                    else:
-                        st.info("No chunk count sentiment distribution data available.")
-                with tab2:
-                    if visualizations['sentiment_word']:
-                        st.pyplot(visualizations['sentiment_word'])
-                    else:
-                        st.info("No word count sentiment distribution data available.")
-                
-            # Word Count Distribution by Chunk (Box Plot)
-            with st.expander("Word Count Distribution by Chunk", expanded=False, icon="📊"):
-                st.subheader("Word Count Distribution by Chunk")
-                if visualizations['word_count_box']:
-                    st.pyplot(visualizations['word_count_box'])
+            # Sentiment Distribution
+            'sentiment_chunk': plot_sentiment_pie_chart(ds_without_text, mode='chunk'),
+            'sentiment_word': plot_sentiment_pie_chart(ds_without_text, mode='word'),
+            
+            # Word Count Box Plot
+            'word_count_box': plot_sentiment_box_plot(ds_without_text)
+        }
+    
+        # Collection Size Distribution (Stacked Bar Chart)
+        with st.expander("Collection Size Distribution", expanded=False, icon="📈"):
+            st.subheader("Collection Size Distribution")
+            tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
+            with tab1:
+                if visualizations['collection_chunk']:
+                    st.pyplot(visualizations['collection_chunk'])
                 else:
-                    st.info("No word count data available for box plot.")
+                    st.info("No chunk count distribution data available by collection.")
+                
+            with tab2:
+                if visualizations['collection_word']:
+                    st.pyplot(visualizations['collection_word'])
+                else:
+                    st.info("No word count distribution data available by collection.")
+        
+        # Topic Coverage Distribution (Stacked Bar Chart)
+        with st.expander("Topic Coverage Distribution", expanded=False, icon="💬"):
+            st.subheader("Topic Coverage Distribution")
+            tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
+            with tab1:
+                if visualizations['topic_chunk']:
+                    st.pyplot(visualizations['topic_chunk'])
+                else:
+                    st.info("No chunk count distribution data available by topic.")
+                
+            with tab2:
+                if visualizations['topic_word']:
+                    st.pyplot(visualizations['topic_word'])
+                else:
+                    st.info("No word count distribution data available by topic.")
+        
+        # Overall Sentiment Distribution (Pie Charts and Box Plot)
+        with st.expander("Overall Sentiment Distribution", expanded=False, icon="😃"):
+            st.subheader("Overall Sentiment Distribution")
+            tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
+            with tab1:
+                if visualizations['sentiment_chunk']:
+                    st.pyplot(visualizations['sentiment_chunk'])
+                else:
+                    st.info("No chunk count sentiment distribution data available.")
+            with tab2:
+                if visualizations['sentiment_word']:
+                    st.pyplot(visualizations['sentiment_word'])
+                else:
+                    st.info("No word count sentiment distribution data available.")
+            
+        # Word Count Distribution by Chunk (Box Plot)
+        with st.expander("Word Count Distribution by Chunk", expanded=False, icon="📊"):
+            st.subheader("Word Count Distribution by Chunk")
+            if visualizations['word_count_box']:
+                st.pyplot(visualizations['word_count_box'])
+            else:
+                st.info("No word count data available for box plot.")
 
 def display_collections_table(dataset: Dict[str, Any]) -> None:
     """
@@ -268,7 +286,10 @@ def display_collections_table(dataset: Dict[str, Any]) -> None:
     
     max_chunk_count = max([len(c.get("chunks", [])) for c in collections]) if collections else 0
     
-    for i, collection in enumerate(filtered_collections):
+    for i, collection_index in enumerate(matching_indices):
+        # Get the collection using the matching index
+        collection = collections[collection_index]
+        
         # Get collection metrics
         cc = len(collection.get("chunks", []))
         wc = sum([chunk.get("chunk_dict", {}).get("wc", 0) for chunk in collection.get("chunks", [])])
@@ -308,8 +329,9 @@ def display_collections_table(dataset: Dict[str, Any]) -> None:
         while len(normalized_word_counts) < max_chunk_count:
             normalized_word_counts.append(0)
         
-        # Add to data
+        # Add to data with the actual collection index
         collection_data.append({
+            "ID": collection_index,  # Use the actual collection index
             "Chunks": cc,
             "Words": wc,
             "Topics & Sentiment": topic_sentiment_display,
@@ -361,11 +383,11 @@ def display_collections_table(dataset: Dict[str, Any]) -> None:
                 width="small",
             ),
         },
-        hide_index=False,
+        hide_index=True,  # Hide DataFrame's index since we're showing collection ID as a column
         use_container_width=True,
     )
 
-def display_text_generation_tab(dataset: Dict[str, Any]) -> None:
+def display_collection_veiwer(dataset: Dict[str, Any]) -> None:
     """
     Display text generation interface for a selected collection.
     
@@ -388,17 +410,17 @@ def display_text_generation_tab(dataset: Dict[str, Any]) -> None:
     
     # Collection selector
     col_count = len(collections)
-    col_index = st.number_input(
-        "Selected Index", 
+    col_id = st.number_input(
+        "Selected Collection ID", 
         min_value=0, 
         max_value=col_count-1, 
         value=0,
         step=1
     )
-    st.caption(f"Collection index range: 0-{col_count-1}")
+    st.caption(f"Collection ID range: 0-{col_count-1}")
     
     # Get selected collection
-    selected_collection = collections[col_index]
+    selected_collection = collections[col_id]
     
     # Display generation button
     models = [i for i in get_setting("OPENAI_LLM_MODELS").values()]
@@ -408,27 +430,46 @@ def display_text_generation_tab(dataset: Dict[str, Any]) -> None:
         key=f"llm_model_selector"
     )
     collection_text = selected_collection.get("collection_text", "")
+    
+    # Generate collection text button
     if st.button(f"{"Re-G" if collection_text else "G"}enerate Collection Text", icon="🤖"):
-        # Generate text for the collection
         captured_output = io.StringIO()
         with contextlib.redirect_stdout(captured_output):
             with st.spinner("Generating collection text. Please wait...", show_time=True):
-                collection_with_generated_text = generate_collection_text(selected_collection, content_title, selected_model)
+                # Create a new event loop for async operations
+                loop = asyncio.new_event_loop()
+                
+                try:
+                    # Run the text generation in the event loop
+                    collection_with_generated_text = loop.run_until_complete(
+                        generate_collection_text(selected_collection, content_title, selected_model)
+                    )
+                finally:
+                    # Always close the loop
+                    loop.close()
         
         # Display console output if any
         if captured_output.getvalue():
             st.text_area("Console Output", captured_output.getvalue(), height=200)
         
-        # Update the collection with generated text if successful
+        # Update the dataset with generated text if successful
         if collection_with_generated_text:
-            collections[col_index] = collection_with_generated_text
+            collections[col_id] = collection_with_generated_text
             dataset["collections"] = collections
             dataset_path, console_output = validate_and_save_dataset(get_selected_file('dataset'), dataset, overwrite=True)
             if console_output:
                 st.text_area("Console Output", console_output, height=200)
             if dataset_path:
-                st.success("Collection text generated successfully.")
+                st.session_state['generation_success'] = True
+                st.rerun()
+        else:
+            st.error("Failed to generate text. Please try again.")
     
+    # Display success message if text generation was successful            
+    if 'generation_success' in st.session_state:
+        st.success("Text generation completed successfully.")
+        del st.session_state['generation_success']
+        
     st.divider()
     st.subheader("Collection Information")
     
@@ -439,11 +480,11 @@ def display_text_generation_tab(dataset: Dict[str, Any]) -> None:
             st.markdown(collection_text)
     
     # Display metrics for the selected collection
-    collection_meta = get_collection_metrics(dataset, col_index)
+    collection_meta = get_collection_metrics(dataset, col_id)
     with st.container(border=True):
         cols = st.columns([2, 1, 2, 2, 2])
         with cols[0]:
-            st.metric(f"Collection Index", col_index)
+            st.metric(f"Collection ID", col_id)
         with cols[1]:
             st.empty()
         with cols[2]:
@@ -484,6 +525,154 @@ def display_text_generation_tab(dataset: Dict[str, Any]) -> None:
             else:
                 st.markdown("No text available for this chunk.")
 
+def display_text_generator(dataset: Dict[str, Any]) -> None:
+    """
+    Display interface for generating text for all collections at once.
+    
+    Args:
+        dataset: The dataset JSON object
+    """
+    # Check if collections exist
+    collections = dataset.get("collections", [])
+    if not collections:
+        st.info("No collections found in this dataset.")
+        return
+    
+    # Check if review item exists
+    content_title = dataset.get("content_title", None)
+    if not content_title:
+        st.info("No review item found in this dataset.")
+        return
+    
+    st.subheader("Bulk Text Generation")
+    
+    # Get text statistics
+    meta = get_basic_counts(dataset)
+    meta.update(get_text_presence_percentages(dataset))
+    
+    # Get collections without text
+    collections_without_text = [i for i, col in enumerate(collections) if not col.get("collection_text")]
+    
+    # Display current text coverage stats - simplified to show only percentages
+    with st.container(border=True):
+        cols = st.columns([2, 2, 2, 2])
+        
+        with cols[0]:
+            st.metric("Total Collections", meta.get("collections_count", 0))
+        with cols[1]:
+            st.metric("Collections w/o Text", len(collections_without_text))
+        with cols[2]:
+            st.metric("Collections w/ Text", f"{meta.get('collections_text_percent', 0):.1f}%")
+        with cols[3]:
+            st.metric("Collections w/o Text", f"{100 - meta.get('collections_text_percent', 0):.1f}%")
+    
+    # Help text
+    st.warning("This tool generates text for all collections that don't have text yet. \
+              For individual collection text generation, use the Collection Viewer tab.")
+    
+    # Display generation button
+    models = [i for i in get_setting("OPENAI_LLM_MODELS").values()]
+    selected_model = st.selectbox(
+        f"LLM Model Selector",
+        models,
+        key=f"bulk_llm_model_selector"
+    )
+    
+    # Generate text button
+    if st.button(f"Generate Text for {len(collections_without_text)} Collections", 
+                icon="🤖", 
+                disabled=len(collections_without_text) == 0):
+        if len(collections_without_text) == 0:
+            st.success("All collections already have text!")
+        else:
+            # Track successful generations
+            successful_generations = 0
+            failed_generations = 0
+            
+            # Display progress bar
+            progress_bar = st.progress(0)
+            progress_text = st.empty()
+            
+            # Prepare for console output capture
+            captured_output = io.StringIO()
+            with contextlib.redirect_stdout(captured_output):
+                with st.spinner("Generating text for all collections without text. This may take a while..."):
+                    # Create a new event loop for async operations
+                    loop = asyncio.new_event_loop()
+                    try:
+                        for i, col_idx in enumerate(collections_without_text):
+                            progress_text.text(f"Processing collection {col_idx} ({i+1}/{len(collections_without_text)})")
+                            
+                            # Generate text for this collection
+                            collection_with_generated_text = loop.run_until_complete(
+                                generate_collection_text(collections[col_idx], content_title, selected_model)
+                            )
+                            
+                            # Update collection if generation was successful
+                            if collection_with_generated_text:
+                                collections[col_idx] = collection_with_generated_text
+                                successful_generations += 1
+                            else:
+                                failed_generations += 1
+                                
+                            # Update progress
+                            progress_bar.progress((i + 1) / len(collections_without_text))
+                    finally:
+                        loop.close()
+            
+            # Display console output if any
+            if captured_output.getvalue():
+                with st.expander("Console Output", expanded=False):
+                    st.text_area("", captured_output.getvalue(), height=200)
+            
+            # Save the updated dataset
+            dataset["collections"] = collections
+            dataset_path, console_output = validate_and_save_dataset(
+                get_selected_file('dataset'), 
+                dataset, 
+                overwrite=True
+            )
+            
+            if console_output:
+                with st.expander("Save Output", expanded=False):
+                    st.text_area("", console_output, height=200)
+            
+            # Display results - only count as success if dataset_path is valid
+            if dataset_path:
+                st.divider()
+                st.write(f"Text generation completed: {successful_generations} successful, {failed_generations} failed.")
+                st.divider()
+                
+                # Show remaining stats
+                collections_without_text_after = [i for i, col in enumerate(collections) if not col.get("collection_text")]
+                if collections_without_text_after:
+                    st.warning(f"{len(collections_without_text_after)} collections still don't have text.")
+                    if st.button("Generate Text for Remaining Collections", icon="🔄"):
+                        st.rerun()
+                else:
+                    st.success("All collections now have text!")
+                    
+                # Update metrics
+                new_meta = get_basic_counts(dataset)
+                new_meta.update(get_text_presence_percentages(dataset))
+                
+                with st.container(border=True):
+                    cols = st.columns([2, 2])
+                    with cols[0]:
+                        st.metric("Collections with Text", 
+                                f"{new_meta.get('collections_text_percent', 0):.1f}%",
+                                delta=f"{new_meta.get('collections_text_percent', 0) - meta.get('collections_text_percent', 0):.1f}%")
+                    with cols[1]:
+                        st.metric("Chunks with Text", 
+                                f"{new_meta.get('chunks_text_percent', 0):.1f}%", 
+                                delta=f"{new_meta.get('chunks_text_percent', 0) - meta.get('chunks_text_percent', 0):.1f}%")
+            else:
+                st.error("Failed to save the dataset. No changes were preserved.")
+    
+    else:
+        if len(collections_without_text) == 0:
+            st.success("All collections already have text!")
+
 # --- Streamlit Page Layout ---
 st.title("Datasets")
 
@@ -511,15 +700,17 @@ if selected_dataset:
     if dataset_structure:
         st.markdown("---")
         st.info(f"{selected_dataset}")
-        
-        metrics_tab, collections_tab, generation_tab = st.tabs(["Dataset Metrics", "Collections Table", "Text Generation"])
+
+        tab_names = ["Dataset Metrics", "Collections Table", "Collection Viewer", "Text Generator"]
+        metrics_tab, table_table, viewer_tab, generation_tab = st.tabs(tab_names)
         with metrics_tab:
-            if st.button("Caculate Metrics", icon="➗"):
-                display_dataset_metrics(dataset_structure)
-        with collections_tab:
+            display_dataset_metrics(dataset_structure)
+        with table_table:
             display_collections_table(dataset_structure)
+        with viewer_tab:
+            display_collection_veiwer(dataset_structure)
         with generation_tab:
-            display_text_generation_tab(dataset_structure)
-        
+            display_text_generator(dataset_structure)
+
 else:
     st.info("Generate and select a dataset to view its content.")

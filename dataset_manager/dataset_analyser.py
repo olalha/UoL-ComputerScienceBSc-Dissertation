@@ -38,18 +38,22 @@ def get_basic_counts(dataset: Dict[str, Any]) -> Dict[str, int]:
         "collections_count": len(collections)
     }
 
-def get_text_presence_counts(dataset: Dict[str, Any]) -> Dict[str, int]:
+def get_text_presence_percentages(dataset: Dict[str, Any]) -> Dict[str, float]:
     """
-    Count chunks and collections that have text.
+    Calculate the percentage of chunks and collections that have text.
     
     Args:
         dataset: The dataset dictionary
         
     Returns:
-        Dictionary with counts of chunks and collections containing text
+        Dictionary with percentages of chunks and collections containing text
     """
+    basic_counts = get_basic_counts(dataset)
+    total_cc = basic_counts.get("total_cc", 0)
+    collections_count = basic_counts.get("collections_count", 0)
+    
     if not dataset or 'collections' not in dataset:
-        return {"chunks_with_text": 0, "collections_with_text": 0}
+        return {"chunks_with_text_percent": 0.0, "collections_with_text_percent": 0.0}
     
     collections = dataset.get('collections', [])
     chunks_with_text = 0
@@ -67,9 +71,12 @@ def get_text_presence_counts(dataset: Dict[str, Any]) -> Dict[str, int]:
         if collection_has_text:
             collections_with_text += 1
     
+    chunks_with_text_percent = (chunks_with_text / total_cc) * 100 if total_cc > 0 else 0.0
+    collections_with_text_percent = (collections_with_text / collections_count) * 100 if collections_count > 0 else 0.0
+    
     return {
-        "chunks_with_text": chunks_with_text,
-        "collections_with_text": collections_with_text
+        "chunks_text_percent": chunks_with_text_percent,
+        "collections_text_percent": collections_with_text_percent
     }
 
 
