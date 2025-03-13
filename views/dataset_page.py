@@ -9,7 +9,7 @@ from utils.settings_manager import get_setting
 from view_components.item_selector import saved_file_selector, get_files_list, get_selected_file, add_new_file_and_select
 from view_components.file_loader import load_and_validate_rulebook, validate_and_save_dataset, load_and_validate_dataset
 from dataset_manager.dataset_structurer import create_dataset_structure
-from dataset_manager.text_generator import generate_collection_text
+from dataset_manager.text_generator import generate_all_collection_texts_parallel
 from dataset_manager.dataset_visualizer import plot_collection_distribution, plot_topic_distribution, plot_sentiment_pie_chart, plot_sentiment_box_plot, get_dataset_copy_without_text
 from dataset_manager.dataset_analyser import get_basic_counts, get_text_presence_percentages, get_min_max_counts, get_unique_topics, get_unique_sentiments, get_collection_metrics, filter_collections
 
@@ -438,24 +438,26 @@ def display_collection_veiwer(dataset: Dict[str, Any]) -> None:
             with st.spinner("Generating collection text. Please wait...", show_time=True):
                 # Create a new event loop for async operations
                 loop = asyncio.new_event_loop()
-                
                 try:
-                    # Run the text generation in the event loop
+                    # Generate all texts in parallel
                     collection_with_generated_text = loop.run_until_complete(
-                        generate_collection_text(selected_collection, content_title, selected_model)
+                        generate_all_collection_texts_parallel(
+                            [col_id], 
+                            collections, 
+                            content_title, 
+                            selected_model
+                        )
                     )
                 finally:
-                    # Always close the loop
                     loop.close()
         
+        # TODO: This will not be displayed if the text generation succeeds (due to rerun)
         # Display console output if any
         if captured_output.getvalue():
             st.text_area("Console Output", captured_output.getvalue(), height=200)
         
         # Update the dataset with generated text if successful
         if collection_with_generated_text:
-            collections[col_id] = collection_with_generated_text
-            dataset["collections"] = collections
             dataset_path, console_output = validate_and_save_dataset(get_selected_file('dataset'), dataset, overwrite=True)
             if console_output:
                 st.text_area("Console Output", console_output, height=200)
@@ -544,6 +546,15 @@ def display_text_generator(dataset: Dict[str, Any]) -> None:
         st.info("No review item found in this dataset.")
         return
     
+    # Display success or failure message if any
+    if 'number_of_failed_collection_generations' in st.session_state:
+        num_failed = st.session_state['number_of_failed_collection_generations']
+        if num_failed > 0:
+            st.warning(f"Failed to generate text for {num_failed} collection(s). Please try again.")
+        else:
+            st.success("Successfully generated text for all collections.")
+        del st.session_state['number_of_failed_collection_generations']
+    
     st.subheader("Bulk Text Generation")
     
     # Get text statistics
@@ -567,8 +578,7 @@ def display_text_generator(dataset: Dict[str, Any]) -> None:
             st.metric("Collections w/o Text", f"{100 - meta.get('collections_text_percent', 0):.1f}%")
     
     # Help text
-    st.warning("This tool generates text for all collections that don't have text yet. \
-              For individual collection text generation, use the Collection Viewer tab.")
+    st.write("ℹ️ For individual collection text generation, use the Collection Viewer tab.")
     
     # Display generation button
     models = [i for i in get_setting("OPENAI_LLM_MODELS").values()]
@@ -579,99 +589,55 @@ def display_text_generator(dataset: Dict[str, Any]) -> None:
     )
     
     # Generate text button
-    if st.button(f"Generate Text for {len(collections_without_text)} Collections", 
-                icon="🤖", 
-                disabled=len(collections_without_text) == 0):
-        if len(collections_without_text) == 0:
-            st.success("All collections already have text!")
-        else:
-            # Track successful generations
-            successful_generations = 0
-            failed_generations = 0
-            
-            # Display progress bar
-            progress_bar = st.progress(0)
-            progress_text = st.empty()
-            
-            # Prepare for console output capture
-            captured_output = io.StringIO()
-            with contextlib.redirect_stdout(captured_output):
-                with st.spinner("Generating text for all collections without text. This may take a while..."):
-                    # Create a new event loop for async operations
-                    loop = asyncio.new_event_loop()
-                    try:
-                        for i, col_idx in enumerate(collections_without_text):
-                            progress_text.text(f"Processing collection {col_idx} ({i+1}/{len(collections_without_text)})")
-                            
-                            # Generate text for this collection
-                            collection_with_generated_text = loop.run_until_complete(
-                                generate_collection_text(collections[col_idx], content_title, selected_model)
-                            )
-                            
-                            # Update collection if generation was successful
-                            if collection_with_generated_text:
-                                collections[col_idx] = collection_with_generated_text
-                                successful_generations += 1
-                            else:
-                                failed_generations += 1
-                                
-                            # Update progress
-                            progress_bar.progress((i + 1) / len(collections_without_text))
-                    finally:
-                        loop.close()
-            
-            # Display console output if any
-            if captured_output.getvalue():
-                with st.expander("Console Output", expanded=False):
-                    st.text_area("", captured_output.getvalue(), height=200)
-            
-            # Save the updated dataset
-            dataset["collections"] = collections
-            dataset_path, console_output = validate_and_save_dataset(
-                get_selected_file('dataset'), 
-                dataset, 
-                overwrite=True
-            )
-            
-            if console_output:
-                with st.expander("Save Output", expanded=False):
-                    st.text_area("", console_output, height=200)
-            
-            # Display results - only count as success if dataset_path is valid
-            if dataset_path:
-                st.divider()
-                st.write(f"Text generation completed: {successful_generations} successful, {failed_generations} failed.")
-                st.divider()
-                
-                # Show remaining stats
-                collections_without_text_after = [i for i, col in enumerate(collections) if not col.get("collection_text")]
-                if collections_without_text_after:
-                    st.warning(f"{len(collections_without_text_after)} collections still don't have text.")
-                    if st.button("Generate Text for Remaining Collections", icon="🔄"):
-                        st.rerun()
-                else:
-                    st.success("All collections now have text!")
-                    
-                # Update metrics
-                new_meta = get_basic_counts(dataset)
-                new_meta.update(get_text_presence_percentages(dataset))
-                
-                with st.container(border=True):
-                    cols = st.columns([2, 2])
-                    with cols[0]:
-                        st.metric("Collections with Text", 
-                                f"{new_meta.get('collections_text_percent', 0):.1f}%",
-                                delta=f"{new_meta.get('collections_text_percent', 0) - meta.get('collections_text_percent', 0):.1f}%")
-                    with cols[1]:
-                        st.metric("Chunks with Text", 
-                                f"{new_meta.get('chunks_text_percent', 0):.1f}%", 
-                                delta=f"{new_meta.get('chunks_text_percent', 0) - meta.get('chunks_text_percent', 0):.1f}%")
-            else:
-                st.error("Failed to save the dataset. No changes were preserved.")
-    
+    are_empty_collections = len(collections_without_text) == 0
+    if not are_empty_collections:
+        btn_text = f"Generate Text for {len(collections_without_text)} Collections"
     else:
-        if len(collections_without_text) == 0:
-            st.success("All collections already have text!")
+        btn_text = "All Collections Already Text"
+    if st.button(btn_text, icon="🤖", disabled=are_empty_collections):
+        # Prepare for console output capture
+        captured_output = io.StringIO()
+        with contextlib.redirect_stdout(captured_output):
+            with st.spinner("Generating text for all collections without text. This may take a while...", show_time=True):
+                # Create a new event loop for async operations
+                loop = asyncio.new_event_loop()
+                try:
+                    # Generate all texts in parallel
+                    successful_collections = loop.run_until_complete(
+                        generate_all_collection_texts_parallel(
+                            collections_without_text, 
+                            collections, 
+                            content_title, 
+                            selected_model
+                        )
+                    )
+                finally:
+                    loop.close()
+        
+        # TODO: This will not be displayed if the text generation succeeds (due to rerun)
+        # Display console output if any
+        if captured_output.getvalue():
+            st.text_area("", captured_output.getvalue(), height=200)
+        
+        # Save the updated dataset
+        dataset["collections"] = collections
+        dataset_path, console_output = validate_and_save_dataset(
+            get_selected_file('dataset'), 
+            dataset, 
+            overwrite=True
+        )
+        
+        if console_output:
+            st.text_area("", console_output, height=200)
+        if dataset_path:
+            # Calculate successful and failed generations
+            successful_generations = len(successful_collections)
+            failed_generations = len(collections_without_text) - successful_generations
+            st.session_state['number_of_failed_collection_generations'] = failed_generations
+            st.rerun()
+        else:
+            st.error("Failed to save the dataset. No changes were preserved.")
+
 
 # --- Streamlit Page Layout ---
 st.title("Datasets")
