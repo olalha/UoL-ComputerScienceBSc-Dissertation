@@ -3,6 +3,7 @@ import contextlib
 import streamlit as st
 import pandas as pd
 import asyncio
+import json
 from typing import Dict, Any
 
 from utils.settings_manager import get_setting
@@ -171,12 +172,9 @@ def display_collections_table(dataset: Dict[str, Any]) -> None:
     Args:
         dataset: The dataset JSON object
     """
-    collections = dataset.get("collections", [])
-    if not collections:
-        st.info("No collections found in this dataset.")
-        return
 
     st.subheader("Collections")
+    collections = dataset.get("collections", [])
     
     # Get all available topics and sentiments
     all_topics = get_unique_topics(dataset)
@@ -394,19 +392,10 @@ def display_collection_veiwer(dataset: Dict[str, Any]) -> None:
     Args:
         dataset: The dataset JSON object
     """
-    # Check if collections exist
-    collections = dataset.get("collections", [])
-    if not collections:
-        st.info("No collections found in this dataset.")
-        return
     
-    # Check if review item exists
-    content_title = dataset.get("content_title", None)
-    if not content_title:
-        st.info("No review item found in this dataset.")
-        return
-        
     st.subheader("Select a Collection")
+    content_title = dataset.get("content_title", "No Title")
+    collections = dataset.get("collections", [])
     
     # Collection selector
     col_count = len(collections)
@@ -436,6 +425,7 @@ def display_collection_veiwer(dataset: Dict[str, Any]) -> None:
         captured_output = io.StringIO()
         with contextlib.redirect_stdout(captured_output):
             with st.spinner("Generating collection text. Please wait...", show_time=True):
+                
                 # Create a new event loop for async operations
                 loop = asyncio.new_event_loop()
                 try:
@@ -450,36 +440,47 @@ def display_collection_veiwer(dataset: Dict[str, Any]) -> None:
                     )
                 finally:
                     loop.close()
+
+        # Save the updated dataset
+        dataset_path, console_output = validate_and_save_dataset(
+            get_selected_file('dataset'), 
+            dataset, 
+            overwrite=True
+        )
         
-        # TODO: This will not be displayed if the text generation succeeds (due to rerun)
-        # Display console output if any
-        if captured_output.getvalue():
-            st.text_area("Console Output", captured_output.getvalue(), height=200)
-        
-        # Update the dataset with generated text if successful
-        if collection_with_generated_text:
-            dataset_path, console_output = validate_and_save_dataset(get_selected_file('dataset'), dataset, overwrite=True)
-            if console_output:
-                st.text_area("Console Output", console_output, height=200)
-            if dataset_path:
-                st.session_state['generation_success'] = True
-                st.rerun()
+        # Save status of text generation for display after rerun
+        if dataset_path:
+            st.session_state['collection_text_gen'] = len(collection_with_generated_text)
         else:
-            st.error("Failed to generate text. Please try again.")
+            # Indicate saving failed with a negative count
+            st.session_state['collection_text_gen'] = -1
+            
+        # Store the console output
+        full_console_output = captured_output.getvalue() + console_output
+        if full_console_output:
+            st.session_state['collection_gen_console_output'] = full_console_output
+        
+        # Update the page to show the generated text
+        st.rerun()
     
-    # Display success message if text generation was successful            
-    if 'generation_success' in st.session_state:
-        st.success("Text generation completed successfully.")
-        del st.session_state['generation_success']
+    # Display success or failure message from previous run if any
+    if 'collection_text_gen' in st.session_state:
+        generated_collections = st.session_state['collection_text_gen']
+        if generated_collections == -1:
+            st.error("Failed to save the dataset after generating text.")
+        elif generated_collections == 0:
+            st.warning("Failed to generate text for the selected collection.")
+        else:
+            st.success(f"Successfully generated text for selected collection.")
+        del st.session_state['collection_text_gen']
+        
+    # Display console output from previous run if any
+    if 'collection_gen_console_output' in st.session_state:
+        st.text_area("Console Output", st.session_state['collection_gen_console_output'], height=200)
+        del st.session_state['collection_gen_console_output']
         
     st.divider()
     st.subheader("Collection Information")
-    
-    # Display the generated text
-    collection_text = selected_collection.get("collection_text")
-    if collection_text:
-        with st.expander("Collection Text", expanded=True, icon="💬"):
-            st.markdown(collection_text)
     
     # Display metrics for the selected collection
     collection_meta = get_collection_metrics(dataset, col_id)
@@ -497,6 +498,12 @@ def display_collection_veiwer(dataset: Dict[str, Any]) -> None:
             collection_text_len = len(str(selected_collection.get("collection_text", "")).split())
             st.metric("Actual Word Count", collection_text_len if collection_text_len > 1 else "N/A")
     
+    # Display the generated text
+    collection_text = selected_collection.get("collection_text")
+    if collection_text:
+        with st.expander("Collection Text", expanded=True, icon="💬"):
+            st.markdown(collection_text)
+            
     # Display chunk information
     chunks = selected_collection.get("chunks", [])
     for i, chunk in enumerate(chunks):
@@ -534,34 +541,32 @@ def display_text_generator(dataset: Dict[str, Any]) -> None:
     Args:
         dataset: The dataset JSON object
     """
-    # Check if collections exist
-    collections = dataset.get("collections", [])
-    if not collections:
-        st.info("No collections found in this dataset.")
-        return
     
-    # Check if review item exists
-    content_title = dataset.get("content_title", None)
-    if not content_title:
-        st.info("No review item found in this dataset.")
-        return
-    
-    # Display success or failure message if any
-    if 'number_of_failed_collection_generations' in st.session_state:
-        num_failed = st.session_state['number_of_failed_collection_generations']
-        if num_failed > 0:
-            st.warning(f"Failed to generate text for {num_failed} collection(s). Please try again.")
+    # Display success or failure message from previous run if any
+    if 'failed_generations_count' in st.session_state:
+        failed_generations = st.session_state['failed_generations_count']
+        if failed_generations == -1:
+            st.error("Failed to save the dataset after generating text.")
+        elif failed_generations > 0:
+            st.warning(f"Failed to generate text for {failed_generations} collections.")
         else:
-            st.success("Successfully generated text for all collections.")
-        del st.session_state['number_of_failed_collection_generations']
+            st.success("All collections have text generated.")
+        del st.session_state['failed_generations_count']
+    
+    # Display console output from previous run if any
+    if 'bulk_gen_console_output' in st.session_state:
+        st.text_area("Console Output", st.session_state['bulk_gen_console_output'], height=200)
+        del st.session_state['bulk_gen_console_output']
     
     st.subheader("Bulk Text Generation")
     
     # Get text statistics
     meta = get_basic_counts(dataset)
     meta.update(get_text_presence_percentages(dataset))
+    content_title = dataset.get("content_title", "Dataset")
     
     # Get collections without text
+    collections = dataset.get("collections", [])
     collections_without_text = [i for i, col in enumerate(collections) if not col.get("collection_text")]
     
     # Display current text coverage stats - simplified to show only percentages
@@ -588,17 +593,19 @@ def display_text_generator(dataset: Dict[str, Any]) -> None:
         key=f"bulk_llm_model_selector"
     )
     
-    # Generate text button
+    # Generate text button with disabled state if all collections have text
     are_empty_collections = len(collections_without_text) == 0
     if not are_empty_collections:
         btn_text = f"Generate Text for {len(collections_without_text)} Collections"
     else:
         btn_text = "All Collections Already Text"
     if st.button(btn_text, icon="🤖", disabled=are_empty_collections):
+        
         # Prepare for console output capture
         captured_output = io.StringIO()
         with contextlib.redirect_stdout(captured_output):
             with st.spinner("Generating text for all collections without text. This may take a while...", show_time=True):
+                
                 # Create a new event loop for async operations
                 loop = asyncio.new_event_loop()
                 try:
@@ -614,30 +621,115 @@ def display_text_generator(dataset: Dict[str, Any]) -> None:
                 finally:
                     loop.close()
         
-        # TODO: This will not be displayed if the text generation succeeds (due to rerun)
-        # Display console output if any
-        if captured_output.getvalue():
-            st.text_area("", captured_output.getvalue(), height=200)
-        
         # Save the updated dataset
-        dataset["collections"] = collections
         dataset_path, console_output = validate_and_save_dataset(
             get_selected_file('dataset'), 
             dataset, 
             overwrite=True
         )
         
-        if console_output:
-            st.text_area("", console_output, height=200)
+        # Save status of text generation for display after rerun
+        successful_generations = len(successful_collections)
+        failed_generations = len(collections_without_text) - successful_generations
         if dataset_path:
-            # Calculate successful and failed generations
-            successful_generations = len(successful_collections)
-            failed_generations = len(collections_without_text) - successful_generations
-            st.session_state['number_of_failed_collection_generations'] = failed_generations
-            st.rerun()
+            st.session_state['failed_generations_count'] = failed_generations
         else:
-            st.error("Failed to save the dataset. No changes were preserved.")
+            # Indicate saving failed with a negative count
+            st.session_state['failed_generations_count'] = -1
+        
+        # Store the console output
+        full_console_output = captured_output.getvalue() + console_output
+        if full_console_output:
+            st.session_state['bulk_gen_console_output'] = full_console_output
+        
+        # Update the page
+        st.rerun()
 
+def display_export_options(dataset: Dict[str, Any]) -> None:
+    """
+    Display options for exporting the dataset in different formats.
+    
+    Args:
+        dataset: The dataset JSON object
+    """
+    st.subheader("Export Dataset")
+    
+    # Content title for default filenames
+    content_title = dataset.get("content_title", "dataset")
+    
+    with st.container(border=True):
+        st.markdown("#### Download Dataset JSON")
+        st.write("Download the complete dataset structure as a JSON file.")
+        
+        # Prepare JSON data for download
+        json_data = json.dumps(dataset, indent=4)
+        
+        # Text field for customizing filename
+        json_filename = st.text_input(
+            "JSON Filename", 
+            value=f"{content_title}.json",
+            key="json_export_filename"
+        )
+
+        # Create download button
+        st.download_button(
+            label="Download JSON",
+            data=json_data,
+            file_name=json_filename,
+            mime="application/json",
+            key="download_dataset_json",
+            help="Download the full dataset structure as a JSON file",
+            type="primary"
+        )
+    
+    with st.container(border=True): 
+        st.markdown("#### Download Collection Texts")
+        st.write("Download all collection texts as a single TXT file.")
+        
+        # Divider characters for separating collection texts
+        col1, col2 = st.columns(2)
+        with col1:
+            st.text_input("Divider", value=f"{10*'-'}", key="collection_text_divider")
+            st.caption("Separator between collection texts.")
+        with col2:
+            st.selectbox("Text Encoding", ["UTF-8", "UTF-16", "ISO-8859-1"], index=0, key="text_encoding")
+        
+        # Get all collection texts
+        collections = dataset.get("collections", [])
+        collection_texts = []
+        divider = f"\n\n{st.session_state['collection_text_divider']}\n\n"
+        for i, collection in enumerate(collections):
+            text = collection.get("collection_text", "")
+            if text:
+                collection_texts.append(f"{divider if i > 0 else ""}{text}")
+        encoding = st.session_state['text_encoding']
+        export_text = f"".join(collection_texts).encode("utf-8" if encoding is None else encoding)
+        collections_with_text = sum(1 for col in collections if col.get("collection_text"))
+         
+        # Text field for customizing filename
+        txt_filename = st.text_input(
+            "TXT Filename", 
+            value=f"{content_title}.txt",
+            key="txt_export_filename"
+        )
+        
+        # Create download button (disabled if no texts available)
+        st.download_button(
+            label="Download TXT",
+            data=export_text,
+            file_name=txt_filename,
+            mime="text/plain",
+            key="download_collection_texts",
+            help="Download all collection texts as a single TXT file",
+            disabled=len(export_text) == 0,
+            type="primary"
+        )
+        
+        # Show info about text availability
+        if collections_with_text == 0:
+            st.info("No collection texts available for export.")
+        else:
+            st.caption(f"{collections_with_text} of {len(collections)} collections have text available for export.")
 
 # --- Streamlit Page Layout ---
 st.title("Datasets")
@@ -667,8 +759,8 @@ if selected_dataset:
         st.markdown("---")
         st.info(f"{selected_dataset}")
 
-        tab_names = ["Dataset Metrics", "Collections Table", "Collection Viewer", "Text Generator"]
-        metrics_tab, table_table, viewer_tab, generation_tab = st.tabs(tab_names)
+        tab_names = ["Dataset Metrics", "Collections Table", "Collection Viewer", "Text Generator", "Export Data"]
+        metrics_tab, table_table, viewer_tab, generation_tab, export_tab = st.tabs(tab_names)
         with metrics_tab:
             display_dataset_metrics(dataset_structure)
         with table_table:
@@ -677,6 +769,8 @@ if selected_dataset:
             display_collection_veiwer(dataset_structure)
         with generation_tab:
             display_text_generator(dataset_structure)
+        with export_tab:
+            display_export_options(dataset_structure)
 
 else:
     st.info("Generate and select a dataset to view its content.")
