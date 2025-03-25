@@ -28,7 +28,43 @@ def generate_dataset_structure_form() -> None:
         with st.form(key="generate_dataset_form", border=False):
             rulebook_for_dataset = st.selectbox("Rulebook Selector", rulebooks)
             st.write("Warning: Invalid rulebooks will not be displayed.")
-            search_time_for_dataset = st.slider("Solution Search Time (seconds)", min_value=1, max_value=60, value=5)
+            search_time_for_dataset = st.slider("Solution Search Time (seconds)", min_value=1, max_value=60, value=10)
+            
+            # Add advanced search parameters in two columns
+            col1, col2 = st.columns(2)
+            with col1:
+                initial_solution = st.selectbox(
+                    "Initial Solution", 
+                    options=["simple", "greedy"],
+                    format_func=lambda x: "Simple" if x == "simple" else "Greedy",
+                    help="Simple: Each chunk in its own collection. Greedy: Build collections incrementally."
+                )
+                
+                cost_function = st.selectbox(
+                    "Cost Function", 
+                    options=["simple", "enhanced"],
+                    format_func=lambda x: "Simple" if x == "simple" else "Enhanced",
+                    help="Simple: Distribution matching only. Enhanced: Balance distribution with collection count."
+                )
+                
+            with col2:
+                move_selector = st.selectbox(
+                    "Move Selector", 
+                    options=["static", "adaptive"],
+                    format_func=lambda x: "Static" if x == "static" else "Adaptive",
+                    help="Static: Equal probability for all moves. Adaptive: Adjusts based on current state."
+                )
+                
+                cooling_rate = st.slider(
+                    "Cooling Rate", 
+                    min_value=0.950, 
+                    max_value=0.999, 
+                    value=0.995, 
+                    step=0.001,
+                    format="%.3f",
+                    help="Higher values lead to slower cooling and more thorough search but take longer."
+                )
+            
             submitted = st.form_submit_button("Generate Dataset Structure")
 
     # Process the form submission
@@ -47,7 +83,14 @@ def generate_dataset_structure_form() -> None:
                 # Generate dataset structure and capture console output
                 captured_output = io.StringIO()
                 with contextlib.redirect_stdout(captured_output):
-                    dataset = create_dataset_structure(rulebook=rulebook, solution_search_time_s=search_time_for_dataset)
+                    dataset = create_dataset_structure(
+                        rulebook=rulebook, 
+                        solution_search_time_s=search_time_for_dataset,
+                        initial_solution_fn=initial_solution,
+                        cost_function=cost_function,
+                        move_selector=move_selector,
+                        cooling_rate=cooling_rate
+                    )
                 
                 # Display console output if any
                 if captured_output.getvalue():

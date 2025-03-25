@@ -4,21 +4,31 @@ from chunk_manager.chunk_partitioner import get_chunks
 from chunk_manager.chunk_aggregator import aggregate_chunks
 from chunk_manager.rulebook_parser import validate_rulebook_values
 
-def create_dataset_structure(rulebook: dict, solution_search_time_s: int) -> Optional[str]:
+def create_dataset_structure(
+    rulebook: dict, 
+    solution_search_time_s: int, 
+    initial_solution_fn: str = "simple", 
+    cost_function: str = "simple", 
+    move_selector: str = "static",
+    cooling_rate: float = 0.995 ) -> Optional[dict]:
     """
-    Creates a structured dataset from a rulebook and writes it to a JSON file.
+    Creates a structured dataset from a rulebook.
 
     The function validates the rulebook, generates chunks, allocates them to collections
     according to the rulebook specifications, and builds a complete dataset structure with
-    metadata. The resulting dataset is then written to a JSON file.
+    metadata.
 
     Args:
         rulebook (dict): The rulebook containing dataset parameters and constraints.
         solution_search_time_s (int): Maximum time in seconds to search for a solution
                                      when allocating chunks to collections.
+        initial_solution_fn (str): Initial solution method ("simple" or "greedy").
+        cost_function (str): Cost function to use ("simple" or "enhanced").
+        move_selector (str): Move probability method ("static" or "adaptive").
+        cooling_rate (float): Cooling rate for simulated annealing (0.950-0.999).
 
     Returns:
-        Optional[str]: Path to the created JSON file on success, or None if an error occurred.
+        Optional[dict]: Dataset structure on success, or None if an error occurred.
     """
     
     # Validate rulebook values
@@ -29,10 +39,7 @@ def create_dataset_structure(rulebook: dict, solution_search_time_s: int) -> Opt
     # Generate chunks
     all_chunks_dicts = get_chunks(rulebook=rulebook)
     
-    
-    
     # Check if partitioning failed
-    
     if not all_chunks_dicts:
         print("create_dataset_structure: Failed to partition chunks.")
         return None
@@ -40,10 +47,16 @@ def create_dataset_structure(rulebook: dict, solution_search_time_s: int) -> Opt
     # Find best allocation of chunks to collections
     collection_ranges = rulebook['collection_ranges']
     collection_mode = rulebook['collection_mode']
-    solution = aggregate_chunks(chunks=all_chunks_dicts, 
-                                collections=collection_ranges,
-                                collection_mode=collection_mode, 
-                                time_limit=solution_search_time_s)
+    solution = aggregate_chunks(
+        chunks=all_chunks_dicts, 
+        size_ranges=collection_ranges,
+        collection_mode=collection_mode, 
+        time_limit=solution_search_time_s,
+        initial_solution_fn=initial_solution_fn,
+        cost_function=cost_function,
+        move_selector=move_selector,
+        cooling_rate=cooling_rate
+    )
     
     # Check if a solution was found
     if not solution:
