@@ -29,7 +29,10 @@ def create_dataset_structure(rulebook: dict, solution_search_time_s: int) -> Opt
     # Generate chunks
     all_chunks_dicts = get_chunks(rulebook=rulebook)
     
+    
+    
     # Check if partitioning failed
+    
     if not all_chunks_dicts:
         print("create_dataset_structure: Failed to partition chunks.")
         return None

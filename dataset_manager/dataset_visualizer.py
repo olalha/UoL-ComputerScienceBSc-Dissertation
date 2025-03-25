@@ -125,6 +125,7 @@ def plot_collection_distribution(dataset: Dict[str, Any], mode: str) -> Optional
     # Add legend and adjust layout
     ax.legend()
     plt.tight_layout()
+    plt.grid(True, axis='y', linestyle='--', alpha=GRID_ALPHA)
     
     return fig
 
@@ -212,6 +213,7 @@ def plot_topic_distribution(dataset: Dict[str, Any], mode: str = "chunk") -> Opt
     # Add legend and adjust layout
     ax.legend()
     plt.tight_layout()
+    plt.grid(True, axis='y', linestyle='--', alpha=GRID_ALPHA)
     
     return fig
 
