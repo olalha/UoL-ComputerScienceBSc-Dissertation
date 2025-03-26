@@ -197,9 +197,7 @@ def update_size_category(collection_obj: Dict[str, Any],
 
 """ Cost Functions """
 
-def compute_cost_simple(state: List[Dict[str, Any]], 
-                      size_ranges: List[Dict[str, Any]], 
-                      value_extractor: Callable) -> float:
+def compute_cost_simple(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]]) -> float:
     """
     Original simple cost function: Compute the overall penalty as the sum over size categories 
     of the squared difference between the actual fraction of collections in that category
@@ -236,9 +234,7 @@ def compute_cost_simple(state: List[Dict[str, Any]],
     return penalty
 
 
-def compute_cost_enhanced(state: List[Dict[str, Any]], 
-                        size_ranges: List[Dict[str, Any]], 
-                        value_extractor: Callable) -> float:
+def compute_cost_enhanced(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]]) -> float:
     """
     Improved cost function that balances distribution matching with collection minimization.
     
@@ -309,7 +305,7 @@ def get_move_probs_static() -> Dict[str, float]:
     }
 
 
-def get_move_probs_adaptive(state: List[Dict[str, Any]], chunks: List[Dict[str, Any]]) -> Dict[str, float]:
+def get_move_probs_adaptive(state: List[Dict[str, Any]]) -> Dict[str, float]:
     """
     Determine adaptive probabilities for move types based on current state.
     
@@ -438,7 +434,7 @@ def greedy_solution(chunks: List[Dict[str, Any]],
             # Create temporary state to evaluate cost
             temp_state = state.copy()
             temp_state[i] = new_collection
-            cost = compute_cost_enhanced(temp_state, size_ranges, value_extractor)
+            cost = compute_cost_enhanced(temp_state, size_ranges)
             
             # If this is better than current best, update best
             if cost < best_cost or (cost == best_cost and random.random() < GREEDY_RANDOMIZATION):
@@ -455,7 +451,7 @@ def greedy_solution(chunks: List[Dict[str, Any]],
         # Evaluate creating a new collection
         temp_state = state.copy()
         temp_state.append(new_coll)
-        new_cost = compute_cost_enhanced(temp_state, size_ranges, value_extractor)
+        new_cost = compute_cost_enhanced(temp_state, size_ranges)
         
         # Compare with best existing collection
         if new_cost < best_cost or (new_cost == best_cost and random.random() < GREEDY_RANDOMIZATION) or best_index < 0:
@@ -630,7 +626,8 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
                       get_move_probs: Callable,
                       cooling_rate: float = 0.995,
                       time_limit: float = 10, 
-                      max_iter: int = None) -> List[Dict[str, Any]]:
+                      max_iter: int = None,
+                      callback: Callable = None) -> List[Dict[str, Any]]:
     """
     Perform simulated annealing to find an optimal allocation of chunks to collections.
     Uses configurable cost function and move probability function.
@@ -644,6 +641,7 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
         get_move_probs: Function to determine move probabilities
         time_limit: Maximum run time in seconds
         max_iter: Maximum number of iterations (optional)
+        callback: Optional callback function for progress updates
         
     Returns:
         List[Dict[str, Any]]: Best state found
@@ -651,7 +649,7 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
     start_time = time.time()
     current_state = initial_state
     best_state = copy.deepcopy(initial_state)
-    current_cost = compute_cost(current_state, size_ranges, value_extractor)
+    current_cost = compute_cost(current_state, size_ranges)
     best_cost = current_cost
     
     # Initialize temperature
@@ -676,14 +674,16 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
             continue
             
         # Calculate costs
-        new_cost = compute_cost(neighbor, size_ranges, value_extractor)
+        new_cost = compute_cost(neighbor, size_ranges)
         delta = new_cost - current_cost
         
         # Accept or reject move
+        accepted = False
         if delta < 0 or random.random() < math.exp(-delta / T):
             current_state = neighbor
             current_cost = new_cost
             stagnant_iterations = 0
+            accepted = True
             
             # Update best if improved
             if new_cost < best_cost:
@@ -691,6 +691,9 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
                 best_cost = new_cost
         else:
             stagnant_iterations += 1
+            
+        if callback is not None:
+            callback(iteration, T, current_cost, best_cost, current_state, accepted)
         
         # Cool the temperature
         T *= cooling_rate
@@ -723,7 +726,8 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
                      move_selector: str = "static",
                      cooling_rate: float = 0.995,
                      time_limit: float = 10, 
-                     max_iter: int = None) -> Optional[List[Dict[str, Any]]]:
+                     max_iter: int = None,
+                     callback: Callable = None) -> Optional[List[Dict[str, Any]]]:
     """
     Aggregate chunks into collections with configurable components:
     - Initial solution: "simple" or "greedy"
@@ -739,6 +743,7 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
         move_selector: Move probability method ("static" or "adaptive")
         time_limit: Maximum run time in seconds
         max_iter: Maximum iterations (for simulated annealing)
+        callback: Optional callback function for progress updates
         
     Returns:
         Optional[List[Dict[str, Any]]]: The best state found, or None if invalid
@@ -807,7 +812,8 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
         move_probs_fn,
         cooling_rate,
         time_limit,
-        max_iter
+        max_iter,
+        callback
     )
     
     # Verify solution validity
@@ -817,63 +823,3 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
             return None
     
     return best_state
-
-
-""" Utility Functions for Evaluation """
-
-def evaluate_solution(state: List[Dict[str, Any]], 
-                     size_ranges: List[Dict[str, Any]], 
-                     value_extractor: Callable) -> Dict[str, Any]:
-    """
-    Evaluate a solution with detailed metrics.
-    
-    Args:
-        state: Solution state
-        size_ranges: Size range specifications
-        value_extractor: Function to extract value from collections
-        
-    Returns:
-        Dict[str, Any]: Evaluation metrics
-    """
-    # Number of collections
-    N = len(state)
-    
-    # Calculate distribution statistics
-    counts = [0] * len(size_ranges)
-    for coll in state:
-        idx = coll['size_category']
-        if idx is not None:
-            counts[idx] += 1
-    
-    distribution_stats = []
-    mse = 0.0
-    for i, size_range in enumerate(size_ranges):
-        actual_fraction = counts[i] / N if N > 0 else 0
-        target_fraction = size_range['target_fraction']
-        error = actual_fraction - target_fraction
-        mse += error ** 2
-        distribution_stats.append({
-            "range": size_range["range"],
-            "target": target_fraction,
-            "actual": actual_fraction,
-            "error": error
-        })
-    
-    mse /= len(size_ranges)
-    
-    # Count unique topics
-    all_topics = set()
-    for chunk in [c for coll in state for c in coll['chunks']]:
-        all_topics.add(chunk['topic'])
-    
-    # Return comprehensive metrics
-    return {
-        "collection_count": N,
-        "unique_topics": len(all_topics),
-        "theoretical_min_collections": len(all_topics),
-        "distribution_stats": distribution_stats,
-        "distribution_mse": mse,
-        "collection_size_avg": sum(len(coll['chunks']) for coll in state) / N if N > 0 else 0,
-        "cost_simple": compute_cost_simple(state, size_ranges, value_extractor),
-        "cost_enhanced": compute_cost_enhanced(state, size_ranges, value_extractor),
-    }
