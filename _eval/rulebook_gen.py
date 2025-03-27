@@ -7,16 +7,6 @@ from typing import List, Dict, Optional
 # Constants for all hard-coded values
 DECIMAL_PLACES = 2
 
-# Default parameter values
-DEFAULT_TOPIC_CONCENTRATION = 5.0
-DEFAULT_SENTIMENT_CONCENTRATION = 5.0
-DEFAULT_CHUNK_SIZE_AVG = 75
-DEFAULT_CHUNK_SIZE_MAX_DEVIATION = 30
-DEFAULT_CHUNK_SIZE_RANGE_FACTOR = 0.5
-DEFAULT_COLLECTION_RANGES_COUNT = 5
-DEFAULT_COLLECTION_RANGES_FACTOR = 4
-DEFAULT_COLLECTION_DISTRIBUTION_CONCENTRATION = 5.0
-
 # Validation limits
 MIN_CHUNK_SIZE_AVG = 20
 MIN_CHUNK_WC = 20
@@ -29,27 +19,25 @@ MAX_CHUNK_PREF = 0.8
 MIN_CHUNK_WC_DISTRIBUTION = 1.0
 MAX_CHUNK_WC_DISTRIBUTION = 5.0
 
-# Collection range constants
-MIN_WORD_MODE_START = 30
-
 def generate_rulebook(
     mode: str,
     content_title: str,
     total: int,
     topics: List[str],
     # Topic distribution control (higher = more balanced, lower = more skewed)
-    topic_concentration: float = DEFAULT_TOPIC_CONCENTRATION,
+    topic_concentration: float,
     # Sentiment distribution control (higher = more balanced, lower = more skewed)  
-    sentiment_concentration: float = DEFAULT_SENTIMENT_CONCENTRATION,
+    sentiment_concentration: float,
     # Chunk size parameters
-    chunk_size_avg: int = DEFAULT_CHUNK_SIZE_AVG,  # Average words per chunk
-    chunk_size_max_deviation: int = DEFAULT_CHUNK_SIZE_MAX_DEVIATION,  # Controls max deviation from average
-    chunk_size_range_factor: float = DEFAULT_CHUNK_SIZE_RANGE_FACTOR,  # Controls min-max range as fraction of avg
+    chunk_size_avg: int,
+    chunk_size_max_deviation: int,
+    chunk_size_range_factor: float,
     # Collection range parameters
-    collection_ranges_count: int = DEFAULT_COLLECTION_RANGES_COUNT,
-    collection_ranges_factor: int = DEFAULT_COLLECTION_RANGES_FACTOR,  # Multiplier for range sizes based on average chunk size
+    collection_ranges_count: int,
+    collection_ranges_max_val: int,
+    collection_ranges_min_val: int,
     # Collection range distribution control (higher = more balanced, lower = more skewed)  
-    collection_distribution_concentration: float = DEFAULT_COLLECTION_DISTRIBUTION_CONCENTRATION,
+    collection_distribution_concentration: float,
     random_seed: Optional[int] = None
 ) -> Dict:
     """
@@ -83,11 +71,10 @@ def generate_rulebook(
             
         collection_ranges_count: Number of collection ranges to generate
         
-        collection_ranges_factor: Size multiplier for collection ranges
-            - 2: Small collection ranges (max ~2x avg chunk size)
-            - 4: Medium collection ranges (max ~4x avg chunk size)
-            - 6: Large collection ranges (max ~6x avg chunk size)
-            
+        collection_ranges_max_val: Maximum value of the highest collection range interval
+        
+        collection_ranges_min_val: Minimum value of the lowest collection range interval
+        
         collection_distribution_concentration: Controls distribution of collection ranges
             - 1.0: Highly skewed range distribution
             - 3.0: Moderately skewed range distribution
@@ -134,10 +121,9 @@ def generate_rulebook(
     # Generate collection ranges
     collection_ranges = _generate_collection_ranges(
         collection_ranges_count,
-        collection_ranges_factor,
+        collection_ranges_max_val,
+        collection_ranges_min_val,
         collection_distribution_concentration,
-        chunk_size_avg,
-        mode
     )
     
     # Create the rulebook
@@ -246,10 +232,9 @@ def _generate_content_rules(
 
 def _generate_collection_ranges(
     count: int, 
-    ranges_factor: int,
+    ranges_max: int,
+    ranges_min: int,
     distribution_concentration: float,
-    chunk_size_avg: int,
-    mode: str
 ) -> List[Dict]:
     """Generate collection ranges based on parameters"""
     collection_ranges = []
@@ -257,80 +242,25 @@ def _generate_collection_ranges(
     # Generate target fractions based on distribution concentration
     target_fractions = _generate_dirichlet_values(count, distribution_concentration)
     
-    # Define base start value and range span based on mode
-    if mode == "word":
-        # For word mode, start with a reasonable minimum
-        start_value = max(MIN_WORD_MODE_START, chunk_size_avg // 2)
-        
-        # Range span based on average chunk size and multiplier
-        range_span = chunk_size_avg * ranges_factor
-    else:  # chunk mode
-        # For chunk mode, ranges are in terms of number of chunks
-        start_value = 1
-        range_span = max(count, ranges_factor)
+    ranges_max = int(ranges_max)
+    ranges_min = int(ranges_min)
+
+    range_span = max(count, int(ranges_max - ranges_min + 1))
     
     # Calculate range size to distribute evenly across the range_span
-    range_size = max(1, range_span // count)
+    range_size = max(1, range_span // count) - 1 # Subtract 1 to account for overlap
     
     # Create the ranges
-    current_start = start_value
+    current_start = ranges_min
+    currend_end = current_start + range_size
     for i in range(count):
-        if i == count - 1:  # Last range
-            end_value = start_value + range_span - 1
-        else:
-            end_value = current_start + range_size - 1
-        
         collection_ranges.append({
-            "range": [current_start, end_value],
+            "range": [current_start, currend_end],
             "target_fraction": target_fractions[i]
         })
+        current_start = currend_end + 1
+        currend_end = current_start + range_size
         
-        current_start = end_value + 1
+    print(collection_ranges)
     
     return collection_ranges
-
-""" Example Usage """
-
-if __name__ == "__main__":
-    
-    content_title = "Smartphone Reviews"
-    
-    # Relevant topics
-    example_topics = [
-        "Performance", "Battery Life", "Display Quality", "Design",
-        "Camera Quality", "Software Experience", "Build Quality", 
-        "Sound Quality", "Value for Money", "Connectivity"
-    ]
-    
-    rulebook = generate_rulebook(
-        mode="chunk",
-        content_title=content_title,
-        total=500,
-        topics=example_topics,
-        topic_concentration=2.5,
-        sentiment_concentration=3.0,
-        chunk_size_avg=75,
-        chunk_size_max_deviation=30,
-        chunk_size_range_factor=0.3,
-        collection_ranges_count=2,
-        collection_ranges_factor=4,
-        collection_distribution_concentration=5.0,
-        random_seed=420
-    )
-    
-    # Create path to save in the _data/rulebooks/json directory
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(current_dir)
-    output_dir = os.path.join(project_root, "_data", "rulebooks", "json")
-    
-    # Create directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
-    
-    rulebook_title = "generated_rulebook"
-    output_path = os.path.join(output_dir, f"{rulebook_title}.json")
-    
-    # Save the rulebook
-    with open(output_path, 'w') as f:
-        json.dump(rulebook, f, indent=4)
-        
-    print(f"Rulebook saved to: {output_path}")

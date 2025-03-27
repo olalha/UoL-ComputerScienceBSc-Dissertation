@@ -802,18 +802,24 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
         return None
     
     # Run simulated annealing with configured components
-    best_state = simulated_annealing(
-        initial_state,
-        size_ranges,
-        value_extractor,
-        cost_fn,
-        move_probs_fn,
-        cooling_rate,
-        time_limit,
-        max_iter,
-        callback
-    )
     
+    """ TEST - IF GREEDY SKIP SIMULATED ANNEALING - WILL BE REMOVED """
+    
+    if initial_solution_fn == "simple":
+        best_state = simulated_annealing(
+            initial_state,
+            size_ranges,
+            value_extractor,
+            cost_fn,
+            move_probs_fn,
+            cooling_rate,
+            time_limit,
+            max_iter,
+            callback
+        )
+    else:
+        best_state = initial_state
+        
     # Verify solution validity
     for coll in best_state:
         if not valid_collection(coll['chunks']):

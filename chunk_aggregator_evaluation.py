@@ -29,6 +29,7 @@ from _eval.rulebook_gen import generate_rulebook
 from chunk_manager.chunk_aggregator import aggregate_chunks
 from chunk_manager.chunk_partitioner import get_chunks
 from chunk_manager.rulebook_parser import validate_rulebook_values
+from dataset_manager.dataset_visualizer import plot_collection_distribution
 from dataset_manager.dataset_structurer import create_dataset_structure, validate_dataset_values
 from dataset_manager.dataset_analyser import get_basic_counts, get_collection_distribution
 
@@ -40,11 +41,11 @@ from dataset_manager.dataset_analyser import get_basic_counts, get_collection_di
 INITIAL_SOLUTION_METHODS = ["simple", "greedy"]
 COST_FUNCTIONS = ["simple", "enhanced"]
 MOVE_SELECTORS = ["static", "adaptive"]
-COOLING_RATES = [0.990]
+COOLING_RATES = [0.995]
 
 # Test run parameters
 NUM_RUNS_PER_CONFIG = 2  # Number of times to run each configuration
-TIME_LIMIT_PER_RUN = 5  # Maximum time (seconds) for each run
+TIME_LIMIT_PER_RUN = 60  # Maximum time (seconds) for each run
 MAX_ITERATIONS = None    # Maximum iterations (None for no limit)
 RECORD_ITERATION_INTERVAL = 10  # Record data every N iterations
 
@@ -57,19 +58,22 @@ RULEBOOK_PARAMS = [
     {
         "mode": "word",
         "content_title": "30k Word - Topic Skewed - Complex Ranges",
-        "total": 30000,
+        "total": 50000,
         "topics": [
             "Quality", "Price", "Design", "Performance", "Support",
-            "Reliability", "Innovation", "Ergonomics", "Value", "Features"
+            "Reliability", "Innovation", "Ergonomics", "Value", "Features",
+            "Durability", "Usability", "Efficiency", "Compatibility"
         ],
-        "topic_concentration": 2.0,
+        "topic_concentration": 5.0,
         "sentiment_concentration": 2.0,
-        "chunk_size_avg": 90,
-        "chunk_size_max_deviation": 40,
-        "collection_ranges_count": 2,
-        "collection_ranges_factor": 5,
-        "collection_distribution_concentration": 1.5,
-        "random_seed": 333
+        "chunk_size_avg": 60,
+        "chunk_size_max_deviation": 20,
+        "chunk_size_range_factor": 0.6,
+        "collection_ranges_count": 6,
+        "collection_ranges_max_val": 180,
+        "collection_ranges_min_val": 120,
+        "collection_distribution_concentration": 4.0,
+        "random_seed": 33434
     }
 ]
 
@@ -435,34 +439,7 @@ def calculate_summary_statistics(results: List[Dict[str, Any]]) -> pd.DataFrame:
     
     return pd.DataFrame(summaries)
 
-def get_iteration_data(results: List[Dict[str, Any]]) -> Dict[str, pd.DataFrame]:
-    """
-    Analyze convergence patterns from iteration data.
-    """
-    successful_runs = [r for r in results if r['success'] and 'iterations_data' in r]
-    if not successful_runs:
-        return {}
-        
-    convergence_data = {}
-    
-    for run in successful_runs:
-        if not run['iterations_data']:
-            continue
-            
-        config_name = get_configuration_name(run['config'])
-        key = f"{config_name}_{run['rulebook_title']}_{run['run_index']}"
-        
-        # Convert iteration data to DataFrame
-        df = pd.DataFrame(run['iterations_data'])
-        df['config'] = config_name
-        df['rulebook'] = run['rulebook_title']
-        df['run'] = run['run_index']
-        
-        convergence_data[key] = df
-    
-    return convergence_data
-
-def get_best_solution_for_config_rulebook(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+def get_best_run_for_config_rulebook(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Get the best solution for each configuration and rulebook combination.
     """
@@ -470,22 +447,21 @@ def get_best_solution_for_config_rulebook(results: List[Dict[str, Any]]) -> Dict
     if not successful_runs:
         return {}
         
-    best_solutions = {}
+    best_runs = {}
     for run in successful_runs:
         config_name = get_configuration_name(run['config'])
-        key = f"{config_name}_{run['rulebook_title']}"
+        key = f"{config_name}___{run['rulebook_title']}"
         
-        if key not in best_solutions or run['distribution_match'] > best_solutions[key]['distribution_match']:
-            best_solutions[key] = run
+        if key not in best_runs or run['distribution_match'] > best_runs[key]['distribution_match']:
+            best_runs[key] = run
     
-    return {k: v['solution'] for k, v in best_solutions.items()}
+    return best_runs
 
 # ============================================================================
 # VISUALIZATION FUNCTIONS
 # ============================================================================
 
 def create_visualizations(summary_df: pd.DataFrame, 
-                         convergence_data: Dict[str, pd.DataFrame],
                          results: List[Dict[str, Any]],
                          output_path: str):
     """
@@ -505,7 +481,36 @@ def create_visualizations(summary_df: pd.DataFrame,
     os.makedirs(viz_path, exist_ok=True)
     
     # Get best run for each config and rulebook combination
-    best_solutions = get_best_solution_for_config_rulebook(results)
+    best_runs = get_best_run_for_config_rulebook(results)
+    
+    if not best_runs:
+        print("No successful runs to visualize")
+        return
+    
+    # Create solution visualizations
+    create_solution_plots(best_runs, viz_path)
+    
+    # Set plot style
+    plt.style.use('seaborn-v0_8-darkgrid')
+    
+    # Create convergence plots
+    create_convergence_plots(best_runs, viz_path)
+
+def save_figure(fig, filename, path, formats):
+    """Save figure in multiple formats."""
+    for fmt in formats:
+        full_path = os.path.join(path, f"{filename}.{fmt}")
+        fig.savefig(full_path, dpi=PLOT_DPI, bbox_inches='tight')
+    plt.close(fig)
+
+def create_solution_plots(best_runs: Dict[str, Any], output_path: str):
+    
+    # Create a separate directory for solution visualizations
+    solution_viz_path = os.path.join(output_path, "best_solutions_visualizations")
+    os.makedirs(solution_viz_path, exist_ok=True)
+    
+    # Isolate the best solutions
+    best_solutions = {k: v['solution'] for k, v in best_runs.items()}
     
     # Prepare dataset structure
     all_datasets = []
@@ -517,74 +522,58 @@ def create_visualizations(summary_df: pd.DataFrame,
                 collection['chunks'].append({'chunk_dict': chunk_dict, 'chunk_text': None})
             collections.append(collection)
         all_datasets.append({'content_title': key, 'collections': collections})
-        
-    from dataset_manager.dataset_visualizer import plot_collection_distribution
-    
-    # Create a separate directory for solution visualizations
-    solution_viz_path = os.path.join(viz_path, "best_solutions_visualizations")
-    os.makedirs(solution_viz_path, exist_ok=True)
     
     # Generate visualizations for best solutions
     for dataset in all_datasets:
         fig = plot_collection_distribution(dataset, 'word')
-        save_figure(fig, f"collection_distribution_{dataset['content_title']}", 
+        save_figure(fig, f"solution_plot_{dataset['content_title']}", 
             solution_viz_path, VISUALIZATION_FORMATS)
-    
-    # Set plot style
-    plt.style.use('seaborn-v0_8-darkgrid')
-    
-    """ TEMP REMOVAL OF CONVERGENCE PLOTS """
-    # if convergence_data:
-    #     create_convergence_plots(convergence_data, viz_path)
 
-def save_figure(fig, filename, path, formats):
-    """Save figure in multiple formats."""
-    for fmt in formats:
-        full_path = os.path.join(path, f"{filename}.{fmt}")
-        fig.savefig(full_path, dpi=PLOT_DPI, bbox_inches='tight')
-    plt.close(fig)
-
-def create_convergence_plots(convergence_data: Dict[str, pd.DataFrame], output_path: str):
+def create_convergence_plots(best_runs: Dict[str, Any], output_path: str):
     """Create line plots showing convergence patterns."""
-    # Combine all dataframes
-    combined_df = pd.concat(convergence_data.values(), ignore_index=True)
-    
-    # Get unique configurations and rulebooks
-    configs = combined_df['config'].unique()
-    rulebooks = combined_df['rulebook'].unique()
-    
-    for rulebook in rulebooks:
-        fig, ax = plt.subplots(figsize=(12, 8))
-        rulebook_data = combined_df[combined_df['rulebook'] == rulebook]
-        
-        for config in configs:
-            config_data = rulebook_data[rulebook_data['config'] == config]
-            
-            if not config_data.empty:
-                # Group by iteration and average across runs
-                avg_data = config_data.groupby('iteration').agg({
-                    'current_cost': 'mean',
-                    'best_cost': 'mean'
-                }).reset_index()
-                
-                # Plot best cost over iterations
-                ax.plot(avg_data['iteration'], avg_data['best_cost'], 
-                       label=config, linewidth=2, alpha=0.8)
-        
-        ax.set_title(f'Convergence Pattern - {rulebook}', fontsize=14)
-        ax.set_xlabel('Iteration', fontsize=12)
-        ax.set_ylabel('Best Cost', fontsize=12)
-        ax.legend(title='Configuration')
-        ax.grid(True)
-        
-        # Use log scale for y-axis if values vary by orders of magnitude
-        if ax.get_ylim()[1] / max(1e-10, ax.get_ylim()[0]) > 100:
-            ax.set_yscale('log')
-            
-        plt.tight_layout()
-        save_figure(fig, f"convergence_{rulebook.replace(' ', '_')}", 
-                   output_path, VISUALIZATION_FORMATS)
 
+    # Create a separate directory for solution visualizations
+    convergence_viz_path = os.path.join(output_path, "convergence_visualizations")
+    os.makedirs(convergence_viz_path, exist_ok=True)
+    
+    for key, run in best_runs.items():
+        iterations_data = run['iterations_data']
+        if not iterations_data:
+            continue
+        
+        # Extract data for plotting
+        iterations = [d['iteration'] for d in iterations_data]
+        costs = [d['current_cost'] for d in iterations_data]
+        best_costs = [d['best_cost'] for d in iterations_data]
+        temp = [d['temperature'] for d in iterations_data]
+        
+        # Create figure with two y-axes
+        fig, ax1 = plt.subplots(1, 1, figsize=(12, 6))
+        
+        # First y-axis for costs
+        ax1.plot(iterations, costs, label='Current Cost', color='blue', alpha=0.7)
+        ax1.plot(iterations, best_costs, label='Best Cost', color='green', alpha=0.7)
+        ax1.set_xlabel("Iteration")
+        ax1.set_ylabel("Cost", color='blue')
+        ax1.tick_params(axis='y', labelcolor='blue')
+        
+        # Second y-axis for temperature
+        ax2 = ax1.twinx()
+        ax2.plot(iterations, temp, label='Temperature', color='red', linestyle='--')
+        ax2.set_ylabel("Temperature", color='red')
+        ax2.tick_params(axis='y', labelcolor='red')
+        
+        # Title and legend
+        ax1.set_title(f"Convergence Plot: {key}")
+        
+        # Combined legend
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
+        
+        # Save figure
+        save_figure(fig, f"convergence_plot_{key}", convergence_viz_path, VISUALIZATION_FORMATS)
+    
 # ============================================================================
 # EXPORT FUNCTIONS
 # ============================================================================
@@ -607,13 +596,12 @@ def export_results(summary_df: pd.DataFrame,
             # Export full results (without large iteration structures)
             compact_results = []
             for result in all_results:
-                # Create a copy without the iteration structure
-                compact = {k: v for k, v in result.items() if k != 'iterations_data'}
                 
                 # Convert config dict to string for better readability in JSON
-                if 'config' in compact:
-                    compact['config_str'] = get_configuration_name(compact['config'])
+                compact = {"config_str": get_configuration_name(result['config'])}
                     
+                # Create a copy without the iteration structure
+                compact.update({k: v for k, v in result.items() if k != 'iterations_data'})
                 compact_results.append(compact)
                 
             json_path = os.path.join(output_path, "evaluation_results.json")
@@ -683,11 +671,8 @@ def main():
     sorted_configs = summary_df.sort_values('avg_distribution_match', ascending=False)
     print(sorted_configs[['configuration', 'rulebook', 'avg_distribution_match', 'avg_execution_time']].to_string(index=False))
     
-    # Analyze convergence patterns
-    convergence_data = get_iteration_data(all_results)
-    
     # Create visualizations
-    create_visualizations(summary_df, convergence_data, all_results, output_path)
+    create_visualizations(summary_df, all_results, output_path)
     
     # Export results
     export_results(summary_df, all_results, output_path)
