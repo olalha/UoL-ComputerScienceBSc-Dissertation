@@ -110,6 +110,22 @@ def generate_dataset_structure_form() -> None:
                 else:
                     st.error("Failed to generate dataset structure. Please try again.")
 
+@st.cache_data
+def plot_collection_distribution_with_st_cache(ds, mode: str) -> None:
+    return plot_collection_distribution(ds, mode=mode)
+
+@st.cache_data
+def plot_topic_distribution_with_st_cache(ds, mode: str) -> None:
+    return plot_topic_distribution(ds, mode=mode)
+
+@st.cache_data
+def plot_sentiment_pie_chart_with_st_cache(ds, mode: str) -> None:
+    return plot_sentiment_pie_chart(ds, mode=mode)
+
+@st.cache_data
+def plot_sentiment_box_plot_with_st_cache(ds) -> None:
+    return plot_sentiment_box_plot(ds)
+
 def display_dataset_metrics(dataset: Dict[str, Any]) -> None:
     """ Display comprehensive metrics and visualizations for the dataset. """
     
@@ -138,19 +154,19 @@ def display_dataset_metrics(dataset: Dict[str, Any]) -> None:
         # Pre-generate all visualizations
         visualizations = {
             # Collection Distribution
-            'collection_chunk': plot_collection_distribution(ds_without_text, mode='chunk'),
-            'collection_word': plot_collection_distribution(ds_without_text, mode='word'),
+            'collection_chunk': plot_collection_distribution_with_st_cache(ds_without_text, mode='chunk'),
+            'collection_word': plot_collection_distribution_with_st_cache(ds_without_text, mode='word'),
             
             # Topic Distribution
-            'topic_chunk': plot_topic_distribution(ds_without_text, mode='chunk'),
-            'topic_word': plot_topic_distribution(ds_without_text, mode='word'),
+            'topic_chunk': plot_topic_distribution_with_st_cache(ds_without_text, mode='chunk'),
+            'topic_word': plot_topic_distribution_with_st_cache(ds_without_text, mode='word'),
             
             # Sentiment Distribution
-            'sentiment_chunk': plot_sentiment_pie_chart(ds_without_text, mode='chunk'),
-            'sentiment_word': plot_sentiment_pie_chart(ds_without_text, mode='word'),
+            'sentiment_chunk': plot_sentiment_pie_chart_with_st_cache(ds_without_text, mode='chunk'),
+            'sentiment_word': plot_sentiment_pie_chart_with_st_cache(ds_without_text, mode='word'),
             
             # Word Count Box Plot
-            'word_count_box': plot_sentiment_box_plot(ds_without_text)
+            'word_count_box': plot_sentiment_box_plot_with_st_cache(ds_without_text)
         }
     
         # Collection Size Distribution (Stacked Bar Chart)

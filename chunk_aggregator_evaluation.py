@@ -40,11 +40,11 @@ from dataset_manager.dataset_analyser import get_basic_counts, get_collection_di
 INITIAL_SOLUTION_METHODS = ["simple", "greedy"]
 COST_FUNCTIONS = ["simple", "enhanced"]
 MOVE_SELECTORS = ["static", "adaptive"]
-COOLING_RATES = [0.999, 0.990, 0.950]
+COOLING_RATES = [0.990]
 
 # Test run parameters
-NUM_RUNS_PER_CONFIG = 3  # Number of times to run each configuration
-TIME_LIMIT_PER_RUN = 10  # Maximum time (seconds) for each run
+NUM_RUNS_PER_CONFIG = 2  # Number of times to run each configuration
+TIME_LIMIT_PER_RUN = 5  # Maximum time (seconds) for each run
 MAX_ITERATIONS = None    # Maximum iterations (None for no limit)
 RECORD_ITERATION_INTERVAL = 10  # Record data every N iterations
 
@@ -54,34 +54,27 @@ MAX_WORKERS = max(1, mp.cpu_count() - 1)  # Use all but one CPU core
 
 # Rulebook generation parameters
 RULEBOOK_PARAMS = [
-    # Small rulebook - few topics, balanced distribution
     {
         "mode": "word",
-        "content_title": "Small Balanced Review",
-        "total": 5000,
-        "topics": ["Quality", "Price", "Design", "Performance", "Support"],
-        "topic_concentration": 5.0,  # Balanced
-        "sentiment_concentration": 3.0,
-        "chunk_size_avg": 60,
-        "collection_ranges_count": 4,
-        "random_seed": 42
-    },
-    # Medium rulebook - more topics, skewed distribution
-    {
-        "mode": "word",
-        "content_title": "Medium Skewed Review",
-        "total": 15000,
+        "content_title": "30k Word - Topic Skewed - Complex Ranges",
+        "total": 30000,
         "topics": [
             "Quality", "Price", "Design", "Performance", "Support",
             "Reliability", "Innovation", "Ergonomics", "Value", "Features"
         ],
-        "topic_concentration": 1.5,  # Skewed
+        "topic_concentration": 2.0,
         "sentiment_concentration": 2.0,
-        "chunk_size_avg": 75,
-        "collection_ranges_count": 5,
-        "random_seed": 43
+        "chunk_size_avg": 90,
+        "chunk_size_max_deviation": 40,
+        "collection_ranges_count": 2,
+        "collection_ranges_factor": 5,
+        "collection_distribution_concentration": 1.5,
+        "random_seed": 333
     }
 ]
+
+# Out-of-range vs. in-range distribution match weights
+DISTRIBUTION_MATCH_OOR_VS_IR = (0.50, 0.50) 
 
 # Visualization options
 CREATE_VISUALIZATIONS = True
@@ -100,7 +93,7 @@ DETAILED_LOGGING = True
 
 def setup_output_directory() -> str:
     """Create timestamp-based output directory for results."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_path = os.path.join(OUTPUT_DIR, f"eval_{timestamp}")
     os.makedirs(output_path, exist_ok=True)
     return output_path
@@ -156,11 +149,12 @@ def calculate_distribution_match(state: List[Dict[str, Any]],
     Calculate how well the solution matches the target distribution.
     Returns a normalized score between 0 and 1, where 1 is perfect match.
     """
+    # Handle empty state
     total_collections = len(state)
     if total_collections == 0:
         return 0.0
     
-    # Count collections in each category and those out of range
+    # Count collections by category
     category_counts = {}
     out_of_range_count = 0
     
@@ -171,30 +165,25 @@ def calculate_distribution_match(state: List[Dict[str, Any]],
         else:
             out_of_range_count += 1
     
-    # Apply penalty for out-of-range collections
-    out_of_range_fraction = out_of_range_count / total_collections
-    out_of_range_penalty = out_of_range_fraction  # Linear penalty
+    # Score component 1: Percentage of in-range collections
+    in_range_score = 1.0 - (out_of_range_count / total_collections)
     
-    # Calculate squared differences from target for in-range collections
-    in_range_collections = total_collections - out_of_range_count
-    squared_diff_sum = 0.0
-    
-    if in_range_collections > 0:
+    # Score component 2: Distribution match quality
+    distribution_score = 0.0
+    if total_collections > out_of_range_count:
+        # Use a standard statistical distance measure like total variation distance
+        total_variation = 0.0
         for i, size_range in enumerate(size_ranges):
-            target_fraction = size_range['target_fraction']
-            # Calculate actual fraction relative to total collections
-            actual_fraction = category_counts.get(i, 0) / total_collections
-            squared_diff_sum += (actual_fraction - target_fraction) ** 2
-    else:
-        # If all collections are out of range, maximum distribution error
-        squared_diff_sum = 1.0
+            target = size_range['target_fraction']
+            actual = category_counts.get(i, 0) / total_collections
+            total_variation += abs(actual - target)
+        
+        # Normalize to [0,1] (total variation distance is in [0,2])
+        distribution_score = 1.0 - (total_variation / 2.0)
     
-    # Convert to a match percentage (1 - normalized_error)
-    # Include both distribution mismatch and out-of-range penalty
-    distribution_error = min(1.0, squared_diff_sum / 2.0)
-    match_score = 1.0 - (distribution_error * (1 - out_of_range_penalty) + out_of_range_penalty)
-    
-    return max(0.0, min(1.0, match_score))  # Ensure result is between 0 and 1
+    # Combine scores with equal weighting
+    weights = DISTRIBUTION_MATCH_OOR_VS_IR
+    return weights[0] * in_range_score + weights[1] * distribution_score
 
 # ============================================================================
 # EVALUATION FUNCTIONS
@@ -292,15 +281,7 @@ def evaluate_single_run(config: Dict[str, Any],
                 'execution_time': execution_time,
                 'iterations_data': iterations_data
             }
-            
-        # Calculate final cost based on specified cost function
-        if cost_function == "simple":
-            from chunk_manager.chunk_aggregator import compute_cost_simple
-            final_cost = compute_cost_simple(solution, rulebook['collection_ranges'])
-        else:
-            from chunk_manager.chunk_aggregator import compute_cost_enhanced
-            final_cost = compute_cost_enhanced(solution, rulebook['collection_ranges'])
-            
+        
         # Calculate distribution match quality
         distribution_match = calculate_distribution_match(solution, rulebook['collection_ranges'])
         
@@ -331,7 +312,6 @@ def evaluate_single_run(config: Dict[str, Any],
             'rulebook_title': rulebook['content_title'],
             'run_index': run_index,
             'success': True,
-            'final_cost': final_cost,
             'num_collections': num_collections,
             'distribution_match': distribution_match,
             'execution_time': execution_time,
@@ -373,7 +353,7 @@ def run_evaluations(configs: List[Dict[str, Any]],
     # Calculate total number of evaluations
     total_evaluations = len(configs) * len(rulebooks) * NUM_RUNS_PER_CONFIG
     print(f"\nRunning {total_evaluations} total evaluations "
-          f"({len(configs)} configs × {len(rulebooks)} rulebooks × {NUM_RUNS_PER_CONFIG} runs each)")
+          f"({len(configs)} configs * {len(rulebooks)} rulebooks * {NUM_RUNS_PER_CONFIG} runs each)")
     
     # Create all evaluation tasks
     tasks = []
@@ -431,8 +411,6 @@ def calculate_summary_statistics(results: List[Dict[str, Any]]) -> pd.DataFrame:
                 
             # Calculate statistics
             num_runs = len(config_rb_runs)
-            avg_cost = np.mean([r['final_cost'] for r in config_rb_runs])
-            std_cost = np.std([r['final_cost'] for r in config_rb_runs])
             avg_time = np.mean([r['execution_time'] for r in config_rb_runs])
             avg_collections = np.mean([r['num_collections'] for r in config_rb_runs])
             avg_dist_match = np.mean([r['distribution_match'] for r in config_rb_runs])
@@ -448,8 +426,6 @@ def calculate_summary_statistics(results: List[Dict[str, Any]]) -> pd.DataFrame:
                 'cooling_rate': config['cooling_rate'],
                 'rulebook': rulebook_title,
                 'num_runs': num_runs,
-                'avg_cost': avg_cost,
-                'std_cost': std_cost,
                 'avg_execution_time': avg_time,
                 'avg_collections': avg_collections,
                 'avg_distribution_match': avg_dist_match,
@@ -459,7 +435,7 @@ def calculate_summary_statistics(results: List[Dict[str, Any]]) -> pd.DataFrame:
     
     return pd.DataFrame(summaries)
 
-def analyze_convergence_patterns(results: List[Dict[str, Any]]) -> Dict[str, pd.DataFrame]:
+def get_iteration_data(results: List[Dict[str, Any]]) -> Dict[str, pd.DataFrame]:
     """
     Analyze convergence patterns from iteration data.
     """
@@ -486,6 +462,24 @@ def analyze_convergence_patterns(results: List[Dict[str, Any]]) -> Dict[str, pd.
     
     return convergence_data
 
+def get_best_solution_for_config_rulebook(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Get the best solution for each configuration and rulebook combination.
+    """
+    successful_runs = [r for r in results if r['success']]
+    if not successful_runs:
+        return {}
+        
+    best_solutions = {}
+    for run in successful_runs:
+        config_name = get_configuration_name(run['config'])
+        key = f"{config_name}_{run['rulebook_title']}"
+        
+        if key not in best_solutions or run['distribution_match'] > best_solutions[key]['distribution_match']:
+            best_solutions[key] = run
+    
+    return {k: v['solution'] for k, v in best_solutions.items()}
+
 # ============================================================================
 # VISUALIZATION FUNCTIONS
 # ============================================================================
@@ -510,27 +504,38 @@ def create_visualizations(summary_df: pd.DataFrame,
     viz_path = os.path.join(output_path, "visualizations")
     os.makedirs(viz_path, exist_ok=True)
     
+    # Get best run for each config and rulebook combination
+    best_solutions = get_best_solution_for_config_rulebook(results)
+    
+    # Prepare dataset structure
+    all_datasets = []
+    for key, solution in best_solutions.items():
+        collections = []
+        for item in solution:
+            collection = {'chunks': [], 'collection_text': None}
+            for chunk_dict in item['chunks']:
+                collection['chunks'].append({'chunk_dict': chunk_dict, 'chunk_text': None})
+            collections.append(collection)
+        all_datasets.append({'content_title': key, 'collections': collections})
+        
+    from dataset_manager.dataset_visualizer import plot_collection_distribution
+    
+    # Create a separate directory for solution visualizations
+    solution_viz_path = os.path.join(viz_path, "best_solutions_visualizations")
+    os.makedirs(solution_viz_path, exist_ok=True)
+    
+    # Generate visualizations for best solutions
+    for dataset in all_datasets:
+        fig = plot_collection_distribution(dataset, 'word')
+        save_figure(fig, f"collection_distribution_{dataset['content_title']}", 
+            solution_viz_path, VISUALIZATION_FORMATS)
+    
     # Set plot style
     plt.style.use('seaborn-v0_8-darkgrid')
     
-    # 1. Bar chart comparing performance metrics across configurations
-    create_performance_comparison_plot(summary_df, viz_path)
-    
-    # 2. Line plots showing convergence patterns for best configurations
-    if convergence_data:
-        create_convergence_plots(convergence_data, viz_path)
-    
-    # 3. Box plots for statistical comparisons
-    create_statistical_comparison_plots(summary_df, viz_path)
-    
-    # 4. Correlation heatmap between metrics
-    create_correlation_heatmap(summary_df, viz_path)
-    
-    # 5. Parameter sensitivity analysis
-    create_parameter_sensitivity_plots(summary_df, viz_path)
-    
-    # 6. Distribution match visualizations
-    create_distribution_match_plots(results, viz_path)
+    """ TEMP REMOVAL OF CONVERGENCE PLOTS """
+    # if convergence_data:
+    #     create_convergence_plots(convergence_data, viz_path)
 
 def save_figure(fig, filename, path, formats):
     """Save figure in multiple formats."""
@@ -538,39 +543,6 @@ def save_figure(fig, filename, path, formats):
         full_path = os.path.join(path, f"{filename}.{fmt}")
         fig.savefig(full_path, dpi=PLOT_DPI, bbox_inches='tight')
     plt.close(fig)
-
-def create_performance_comparison_plot(df: pd.DataFrame, output_path: str):
-    """Create bar charts comparing performance metrics across configurations."""
-    # Get top 10 configurations by average distribution match
-    top_configs = df.sort_values('avg_distribution_match', ascending=False).head(10)
-    
-    # Create plot with multiple metrics
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    fig.suptitle('Performance Comparison of Top Configurations', fontsize=16)
-    
-    # Plot average distribution match
-    sns.barplot(data=top_configs, x='configuration', y='avg_distribution_match', ax=axes[0, 0])
-    axes[0, 0].set_title('Average Distribution Match (higher is better)')
-    axes[0, 0].set_xticklabels(axes[0, 0].get_xticklabels(), rotation=45, ha='right')
-    axes[0, 0].set_ylim(0, 1)
-    
-    # Plot average cost
-    sns.barplot(data=top_configs, x='configuration', y='avg_cost', ax=axes[0, 1])
-    axes[0, 1].set_title('Average Cost (lower is better)')
-    axes[0, 1].set_xticklabels(axes[0, 1].get_xticklabels(), rotation=45, ha='right')
-    
-    # Plot average execution time
-    sns.barplot(data=top_configs, x='configuration', y='avg_execution_time', ax=axes[1, 0])
-    axes[1, 0].set_title('Average Execution Time (seconds)')
-    axes[1, 0].set_xticklabels(axes[1, 0].get_xticklabels(), rotation=45, ha='right')
-    
-    # Plot average number of collections
-    sns.barplot(data=top_configs, x='configuration', y='avg_collections', ax=axes[1, 1])
-    axes[1, 1].set_title('Average Number of Collections')
-    axes[1, 1].set_xticklabels(axes[1, 1].get_xticklabels(), rotation=45, ha='right')
-    
-    plt.tight_layout()
-    save_figure(fig, "performance_comparison", output_path, VISUALIZATION_FORMATS)
 
 def create_convergence_plots(convergence_data: Dict[str, pd.DataFrame], output_path: str):
     """Create line plots showing convergence patterns."""
@@ -613,148 +585,6 @@ def create_convergence_plots(convergence_data: Dict[str, pd.DataFrame], output_p
         save_figure(fig, f"convergence_{rulebook.replace(' ', '_')}", 
                    output_path, VISUALIZATION_FORMATS)
 
-def create_statistical_comparison_plots(df: pd.DataFrame, output_path: str):
-    """Create box plots for statistical comparisons."""
-    # Reorganize data for factor comparison
-    factors = {
-        'initial_solution': 'Initial Solution Method', 
-        'cost_function': 'Cost Function',
-        'move_selector': 'Move Selector', 
-        'cooling_rate': 'Cooling Rate'
-    }
-    
-    for factor, title in factors.items():
-        fig, ax = plt.subplots(figsize=(12, 8))
-        
-        # Create box plot
-        sns.boxplot(data=df, x=factor, y='avg_distribution_match', ax=ax)
-        ax.set_title(f'Impact of {title} on Distribution Match', fontsize=14)
-        ax.set_xlabel(title, fontsize=12)
-        ax.set_ylabel('Distribution Match Quality', fontsize=12)
-        ax.set_ylim(0, 1)
-        
-        plt.tight_layout()
-        save_figure(fig, f"boxplot_{factor}", output_path, VISUALIZATION_FORMATS)
-        
-        # Also create box plot for execution time
-        fig, ax = plt.subplots(figsize=(12, 8))
-        sns.boxplot(data=df, x=factor, y='avg_execution_time', ax=ax)
-        ax.set_title(f'Impact of {title} on Execution Time', fontsize=14)
-        ax.set_xlabel(title, fontsize=12)
-        ax.set_ylabel('Execution Time (seconds)', fontsize=12)
-        
-        plt.tight_layout()
-        save_figure(fig, f"boxplot_time_{factor}", output_path, VISUALIZATION_FORMATS)
-
-def create_correlation_heatmap(df: pd.DataFrame, output_path: str):
-    """Create a correlation heatmap between metrics."""
-    # Select numerical columns only
-    numeric_cols = [
-        'avg_cost', 'avg_execution_time', 'avg_collections', 
-        'avg_distribution_match', 'avg_acceptance_ratio'
-    ]
-    
-    corr_matrix = df[numeric_cols].corr()
-    
-    # Create heatmap
-    fig, ax = plt.subplots(figsize=(10, 8))
-    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt='.2f', ax=ax)
-    ax.set_title('Correlation Between Evaluation Metrics', fontsize=14)
-    
-    plt.tight_layout()
-    save_figure(fig, "correlation_heatmap", output_path, VISUALIZATION_FORMATS)
-
-def create_parameter_sensitivity_plots(df: pd.DataFrame, output_path: str):
-    """Create heat maps for parameter sensitivity analysis."""
-    # For each rulebook, create a parameter sensitivity plot
-    for rulebook in df['rulebook'].unique():
-        rulebook_df = df[df['rulebook'] == rulebook]
-        
-        # Create pivot tables for each pair of parameters
-        param_pairs = [
-            ('initial_solution', 'cost_function'),
-            ('move_selector', 'cooling_rate')
-        ]
-        
-        for x_param, y_param in param_pairs:
-            # Create pivot table
-            pivot = rulebook_df.pivot_table(
-                index=y_param, 
-                columns=x_param, 
-                values='avg_distribution_match', 
-                aggfunc='mean'
-            )
-            
-            # Create heatmap
-            fig, ax = plt.subplots(figsize=(10, 8))
-            sns.heatmap(pivot, annot=True, cmap='viridis', fmt='.3f', ax=ax)
-            ax.set_title(f'Parameter Sensitivity: {rulebook}', fontsize=14)
-            
-            plt.tight_layout()
-            filename = f"sensitivity_{rulebook.replace(' ', '_')}_{x_param}_{y_param}"
-            save_figure(fig, filename, output_path, VISUALIZATION_FORMATS)
-
-def create_distribution_match_plots(results: List[Dict[str, Any]], output_path: str):
-    """Create visualizations comparing target vs. actual distributions."""
-    # Filter for successful runs with solutions
-    successful_runs = [r for r in results if r['success'] and 'solution' in r]
-    
-    if not successful_runs:
-        return
-    
-    # Pick a subset of representative runs to visualize
-    for run in successful_runs[:5]:  # Just the first 5 successful runs
-        config_name = get_configuration_name(run['config'])
-        rulebook_title = run['rulebook_title']
-        
-        # Calculate actual vs target distribution
-        solution = run['solution']
-        size_ranges = run.get('rulebook_size_ranges', None)
-        
-        if not size_ranges:
-            # This is a fallback if we don't have the original rulebook size ranges
-            continue
-            
-        # Count distributions
-        total_collections = len(solution)
-        if total_collections == 0:
-            continue
-            
-        actual_counts = {}
-        for collection in solution:
-            category = collection.get('size_category')
-            if category is not None:
-                actual_counts[category] = actual_counts.get(category, 0) + 1
-        
-        # Create comparison dataframe
-        comparison_data = []
-        for i, size_range in enumerate(size_ranges):
-            target_fraction = size_range['target_fraction']
-            actual_fraction = actual_counts.get(i, 0) / total_collections
-            range_label = f"{size_range['range'][0]}-{size_range['range'][1]}"
-            
-            comparison_data.append({
-                'Range': range_label,
-                'Target': target_fraction,
-                'Actual': actual_fraction
-            })
-        
-        comparison_df = pd.DataFrame(comparison_data)
-        
-        # Create grouped bar chart
-        fig, ax = plt.subplots(figsize=(12, 8))
-        comparison_df.plot(x='Range', y=['Target', 'Actual'], kind='bar', ax=ax)
-        
-        ax.set_title(f'Distribution Match: {rulebook_title}\nConfig: {config_name}', fontsize=14)
-        ax.set_xlabel('Collection Size Range', fontsize=12)
-        ax.set_ylabel('Fraction of Collections', fontsize=12)
-        ax.set_ylim(0, max(1.0, comparison_df['Target'].max() * 1.5, comparison_df['Actual'].max() * 1.5))
-        ax.legend(title='Distribution')
-        
-        plt.tight_layout()
-        filename = f"distribution_{rulebook_title.replace(' ', '_')}_{config_name}"
-        save_figure(fig, filename, output_path, VISUALIZATION_FORMATS)
-
 # ============================================================================
 # EXPORT FUNCTIONS
 # ============================================================================
@@ -763,28 +593,35 @@ def export_results(summary_df: pd.DataFrame,
                   all_results: List[Dict[str, Any]], 
                   output_path: str):
     """Export results to CSV and JSON for further analysis."""
-    if SAVE_RESULTS_TO_CSV and not summary_df.empty:
-        summary_csv_path = os.path.join(output_path, "summary_results.csv")
-        summary_df.to_csv(summary_csv_path, index=False)
-        print(f"Saved summary results to: {summary_csv_path}")
     
-    if SAVE_RESULTS_TO_JSON:
-        # Export full results (without large solution structures)
-        compact_results = []
-        for result in all_results:
-            # Create a copy without the solution structure
-            compact = {k: v for k, v in result.items() if k != 'solution'}
-            
-            # Convert config dict to string for better readability in JSON
-            if 'config' in compact:
-                compact['config_str'] = get_configuration_name(compact['config'])
+    try:
+        if SAVE_RESULTS_TO_CSV and not summary_df.empty:
+            summary_csv_path = os.path.join(output_path, "summary_results.csv")
+            summary_df.to_csv(summary_csv_path, index=False)
+            print(f"Saved summary results to: {summary_csv_path}")
+    except Exception as e:
+        print(f"Error saving summary results to CSV: {str(e)}")
+    
+    try:
+        if SAVE_RESULTS_TO_JSON:
+            # Export full results (without large iteration structures)
+            compact_results = []
+            for result in all_results:
+                # Create a copy without the iteration structure
+                compact = {k: v for k, v in result.items() if k != 'iterations_data'}
                 
-            compact_results.append(compact)
-            
-        json_path = os.path.join(output_path, "evaluation_results.json")
-        with open(json_path, 'w') as f:
-            json.dump(compact_results, f, indent=2)
-        print(f"Saved detailed results to: {json_path}")
+                # Convert config dict to string for better readability in JSON
+                if 'config' in compact:
+                    compact['config_str'] = get_configuration_name(compact['config'])
+                    
+                compact_results.append(compact)
+                
+            json_path = os.path.join(output_path, "evaluation_results.json")
+            with open(json_path, 'w') as f:
+                json.dump(compact_results, f, indent=2)
+            print(f"Saved detailed results to: {json_path}")
+    except Exception as e:
+        print(f"Error saving detailed results to JSON: {str(e)}")
 
 # ============================================================================
 # MAIN FUNCTION
@@ -800,6 +637,16 @@ def main():
     output_path = setup_output_directory()
     print(f"\nResults will be saved to: {output_path}")
     
+    # Generate rulebooks
+    rulebooks = generate_test_rulebooks()
+    if not rulebooks:
+        print("No valid rulebooks were generated. Exiting.")
+        return
+    ALL_RULEBOOKS = {f"Rulebook_{i}": rb for i, rb in enumerate(rulebooks)}
+        
+    print(f"Successfully generated {len(rulebooks)} rulebooks")
+    
+    
     # Save configuration parameters
     config_summary = {
         "initial_solution_methods": INITIAL_SOLUTION_METHODS,
@@ -810,19 +657,11 @@ def main():
         "time_limit_per_run": TIME_LIMIT_PER_RUN,
         "max_iterations": MAX_ITERATIONS,
         "use_multiprocessing": USE_MULTIPROCESSING,
-        "rulebook_params": RULEBOOK_PARAMS
+        "rulebook_params": RULEBOOK_PARAMS,
+        "all_generated_rulebooks": ALL_RULEBOOKS
     }
-    
     with open(os.path.join(output_path, "evaluation_config.json"), 'w') as f:
         json.dump(config_summary, f, indent=2)
-    
-    # Generate rulebooks
-    rulebooks = generate_test_rulebooks()
-    if not rulebooks:
-        print("No valid rulebooks were generated. Exiting.")
-        return
-        
-    print(f"Successfully generated {len(rulebooks)} rulebooks")
     
     # Generate all configurations
     configurations = get_all_configurations()
@@ -840,13 +679,12 @@ def main():
         return
     
     # Print summary of best configurations
-    print("\nTop 5 configurations by distribution match quality:")
-    top_configs = summary_df.sort_values('avg_distribution_match', ascending=False).head(5)
-    print(top_configs[['configuration', 'rulebook', 'avg_distribution_match', 
-                      'avg_cost', 'avg_execution_time']].to_string(index=False))
+    print("\nSorted configurations by distribution match quality:")
+    sorted_configs = summary_df.sort_values('avg_distribution_match', ascending=False)
+    print(sorted_configs[['configuration', 'rulebook', 'avg_distribution_match', 'avg_execution_time']].to_string(index=False))
     
     # Analyze convergence patterns
-    convergence_data = analyze_convergence_patterns(all_results)
+    convergence_data = get_iteration_data(all_results)
     
     # Create visualizations
     create_visualizations(summary_df, convergence_data, all_results, output_path)

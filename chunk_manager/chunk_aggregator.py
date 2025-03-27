@@ -290,7 +290,7 @@ def compute_cost_enhanced(state: List[Dict[str, Any]], size_ranges: List[Dict[st
 
 """ Move Probability Functions """
 
-def get_move_probs_static() -> Dict[str, float]:
+def get_move_probs_static(state: List[Dict[str, Any]]) -> Dict[str, float]:
     """
     Return static probabilities for move types (equal probability).
     
@@ -469,7 +469,6 @@ def greedy_solution(chunks: List[Dict[str, Any]],
 def propose_neighbor(state: List[Dict[str, Any]], 
                     size_ranges: List[Dict[str, Any]], 
                     value_extractor: Callable,
-                    chunks: List[Dict[str, Any]],
                     get_move_probs: Callable) -> Optional[List[Dict[str, Any]]]:
     """
     Propose a neighboring state by selecting a move type based on provided probability function,
@@ -490,7 +489,7 @@ def propose_neighbor(state: List[Dict[str, Any]],
     move_made = False
     
     # Get move probabilities based on provided function
-    move_probs = get_move_probs(state, chunks) if callable(get_move_probs) else get_move_probs
+    move_probs = get_move_probs(state)
     
     # Select move type based on probabilities
     move_types = list(move_probs.keys())
@@ -621,7 +620,6 @@ def propose_neighbor(state: List[Dict[str, Any]],
 def simulated_annealing(initial_state: List[Dict[str, Any]], 
                       size_ranges: List[Dict[str, Any]], 
                       value_extractor: Callable,
-                      chunks: List[Dict[str, Any]],
                       compute_cost: Callable,
                       get_move_probs: Callable,
                       cooling_rate: float = 0.995,
@@ -669,7 +667,7 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
         iteration += 1
         
         # Generate neighbor state
-        neighbor = propose_neighbor(current_state, size_ranges, value_extractor, chunks, get_move_probs)
+        neighbor = propose_neighbor(current_state, size_ranges, value_extractor, get_move_probs)
         if neighbor is None:
             continue
             
@@ -691,7 +689,8 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
                 best_cost = new_cost
         else:
             stagnant_iterations += 1
-            
+        
+        # Callback for progress updates during evaluations (optional)
         if callback is not None:
             callback(iteration, T, current_cost, best_cost, current_state, accepted)
         
@@ -775,7 +774,7 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
         
     # Select move probability function
     if move_selector == "static":
-        move_probs_fn = get_move_probs_static()
+        move_probs_fn = get_move_probs_static
     elif move_selector == "adaptive":
         move_probs_fn = get_move_probs_adaptive
     else:
@@ -807,7 +806,6 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
         initial_state,
         size_ranges,
         value_extractor,
-        chunks,
         cost_fn,
         move_probs_fn,
         cooling_rate,

@@ -1,4 +1,3 @@
-import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -58,7 +57,6 @@ def get_dataset_copy_without_text(dataset: Dict[str, Any]) -> Dict[str, Any]:
     
     return processed_dataset
 
-@st.cache_data
 def plot_collection_distribution(dataset: Dict[str, Any], mode: str) -> Optional[plt.Figure]:
     """
     Create a stacked bar chart showing sentiment distribution by collection.
@@ -129,7 +127,6 @@ def plot_collection_distribution(dataset: Dict[str, Any], mode: str) -> Optional
     
     return fig
 
-@st.cache_data
 def plot_topic_distribution(dataset: Dict[str, Any], mode: str = "chunk") -> Optional[plt.Figure]:
     """
     Create a stacked bar chart showing sentiment distribution by topic.
@@ -217,7 +214,6 @@ def plot_topic_distribution(dataset: Dict[str, Any], mode: str = "chunk") -> Opt
     
     return fig
 
-@st.cache_data
 def plot_sentiment_pie_chart(dataset: Dict[str, Any], mode: str) -> Optional[plt.Figure]:
     """
     Create a pie chart showing sentiment distribution by either chunk count or word count.
@@ -275,7 +271,6 @@ def plot_sentiment_pie_chart(dataset: Dict[str, Any], mode: str) -> Optional[plt
     plt.tight_layout()
     return fig
 
-@st.cache_data
 def plot_sentiment_box_plot(dataset: Dict[str, Any]) -> Optional[plt.Figure]:
     """ 
     Create a box plot representing the word count distribution of chunks grouped by sentiment. 
