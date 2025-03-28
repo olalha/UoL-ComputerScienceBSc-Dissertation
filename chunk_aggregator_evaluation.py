@@ -17,7 +17,7 @@ import pandas as pd
 import traceback
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any, Tuple, Optional, Callable
 from datetime import datetime
 from tqdm import tqdm
 import multiprocessing as mp
@@ -26,7 +26,7 @@ import copy
 
 # Import required modules from the project
 from _eval.rulebook_gen import generate_rulebook
-from chunk_manager.chunk_aggregator import aggregate_chunks, compute_cost_enhanced
+from chunk_manager.chunk_aggregator import aggregate_chunks, compute_cost_enhanced, compute_total_wc
 from chunk_manager.chunk_partitioner import get_chunks
 from chunk_manager.rulebook_parser import validate_rulebook_values
 from dataset_manager.dataset_visualizer import plot_collection_distribution
@@ -144,13 +144,14 @@ def get_all_configurations() -> List[Dict[str, Any]]:
     return configs
 
 def calculate_distribution_match(state: List[Dict[str, Any]], 
-                               size_ranges: List[Dict[str, Any]]) -> float:
+                               size_ranges: List[Dict[str, Any]],
+                               value_extractor: Callable) -> float:
     """
     Calculate how well the solution matches the target distribution.
     Returns a normalized score between 0 and 1, where 1 is perfect match.
     """
     # Use the enhanced cost function to calculate the cost
-    return 1 - compute_cost_enhanced(state, size_ranges)
+    return 1 - compute_cost_enhanced(state, size_ranges, value_extractor)
 
 # ============================================================================
 # EVALUATION FUNCTIONS
@@ -250,7 +251,12 @@ def evaluate_single_run(config: Dict[str, Any],
             }
         
         # Calculate distribution match quality
-        distribution_match = calculate_distribution_match(solution, rulebook['collection_ranges'])
+        collection_mode = rulebook['collection_mode']
+        if collection_mode == "word":
+            value_extractor = compute_total_wc
+        elif collection_mode == "chunk":
+            value_extractor = lambda collection: len(collection)
+        distribution_match = calculate_distribution_match(solution, rulebook['collection_ranges'], value_extractor)
         
         # Calculate additional metrics
         num_collections = len(solution)
@@ -625,6 +631,9 @@ def main():
     print("\nCalculating summary statistics...")
     summary_df = calculate_summary_statistics(all_results)
     
+    # Export results
+    export_results(summary_df, all_results, output_path)
+    
     if summary_df.empty:
         print("No successful evaluations to analyze!")
         return
@@ -636,9 +645,6 @@ def main():
     
     # Create visualizations
     create_visualizations(summary_df, all_results, output_path)
-    
-    # Export results
-    export_results(summary_df, all_results, output_path)
     
     print("\nEvaluation completed!")
     print(f"All results and visualizations saved to: {output_path}")

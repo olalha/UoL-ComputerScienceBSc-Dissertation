@@ -198,7 +198,7 @@ def update_size_category(collection_obj: Dict[str, Any],
 
 """ Cost Functions """
 
-def compute_cost_simple(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]]) -> float:
+def compute_cost_simple(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]], value_extractor: Callable) -> float:
     """
     Original simple cost function: Compute the overall penalty as the sum over size categories 
     of the squared difference between the actual fraction of collections in that category
@@ -235,7 +235,7 @@ def compute_cost_simple(state: List[Dict[str, Any]], size_ranges: List[Dict[str,
     return penalty
 
 
-def compute_cost_enhanced(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]]) -> float:
+def compute_cost_enhanced(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]], value_extractor: Callable) -> float:
     """
     Dynamically scaled cost function (0-1 range) with OOR threshold penalty.
     
@@ -257,65 +257,118 @@ def compute_cost_enhanced(state: List[Dict[str, Any]], size_ranges: List[Dict[st
     # Calculate basic metrics
     count_oor = 0
     counts = [0] * len(size_ranges)
+    
+    oor_distance_penalty = 0.0
+    distribution_penalty = 0.0
+    
     for coll in state:
         idx = coll['size_category']
         if idx is not None:
             counts[idx] += 1
         else:
             count_oor += 1
-    
+            # Calculate how far this collection is from ANY valid range
+            coll_size = value_extractor(coll['chunks'])
+            closest_distance = float('inf')
+            min_range = float('inf')
+            max_range = float('-inf')
+            
+            # Find distance to closest valid range
+            for size_range in size_ranges:
+                low, high = size_range['range']
+                min_range = min(min_range, low)
+                max_range = max(max_range, high)
+                
+                if coll_size < low:
+                    distance = low - coll_size
+                elif coll_size > high:
+                    distance = coll_size - high
+                else:
+                    distance = 0  # Should not happen as we're in the OOR case
+                closest_distance = min(closest_distance, distance)
+            
+            # Normalize distance relative to the total range width
+            range_width = max_range - min_range if max_range > min_range else 1
+            normalized_distance = closest_distance / range_width
+            
+            # Apply exponential function: 1 - exp(-k*x) approaches 1 as x increases
+            # This means: slightly OOR = slight penalty, very OOR = severe penalty
+            # k controls steepness - smaller values make the curve more gradual
+            k = 2.0  # Tune this parameter to control sensitivity
+            exponential_penalty = 1.0 - math.exp(-k * normalized_distance)
+            
+            oor_distance_penalty += exponential_penalty
+            
+    # Get average penalty for OOR collections
+    oor_distance_penalty = oor_distance_penalty / count_oor if count_oor > 0 else 0
+
     # Calculate distribution penalty
-    distribution_penalty = 0.0
     for i, size_range in enumerate(size_ranges):
         actual_fraction = counts[i] / N if N > 0 else 0
         target_fraction = size_range['target_fraction']
         distribution_penalty += (actual_fraction - target_fraction) ** 2
-    distribution_penalty += (count_oor / N if N > 0 else 0) ** 2
     
-    # Normalize distribution penalty by max theoretical value (2.0) and add OOR penalty
-    norm_dist_penalty = min(1.0, (distribution_penalty / 2.0))
+    # Add OOR count penalty and distance penalty
+    oor_count_penalty = (count_oor / N if N > 0 else 0) ** 2
+    oor_distance_penalty = oor_distance_penalty / N if N > 0 and count_oor > 0 else 0
     
-    """ COLLECTION COUNT PENALTY """
+    # Combine penalties with appropriate weights
+    oor_weight = 0.5  # Weight for OOR penalties
+    dist_weight = 0.5  # Weight for distribution penalties
     
-    # Count total chunks and unique topics
-    total_chunks = 0
-    topic_counts = {}
-    for coll in state:
-        chunks_in_coll = len(coll['chunks'])
-        total_chunks += chunks_in_coll
-        for chunk in coll['chunks']:
-            topic = chunk['topic']
-            topic_counts[topic] = topic_counts.get(topic, 0) + 1
-    
-    # Calculate minimum collections needed
-    min_collections = max(topic_counts.values()) if topic_counts else 0
-    
-    # Collection penalty: based on how far we are from optimal
-    norm_coll_penalty = 0.0
-    if min_collections > 0 and total_chunks > 0:
-        # Scale based on potential for optimization (0-1 range)
-        potential_range = total_chunks - min_collections
-        if potential_range > 0:
-            norm_coll_penalty = min(1.0, (N - min_collections) / potential_range)
-            
-    """ WEIGHTING """
-    
-    # Ensure weights sum to 1.0
-    norm_weights_sum = DISTRIBUTION_WEIGHT + COLLECTION_COUNT_WEIGHT
-    weight_coll = COLLECTION_COUNT_WEIGHT / norm_weights_sum
-    weight_dist = DISTRIBUTION_WEIGHT / norm_weights_sum
-    
-    # Apply weights and combine
-    total_penalty = (
-        weight_coll * norm_coll_penalty +
-        weight_dist * norm_dist_penalty
+    # Final distribution penalty combines all factors
+    combined_penalty = (
+        dist_weight * distribution_penalty + 
+        oor_weight * (0.5 * oor_count_penalty + 0.5 * oor_distance_penalty)
     )
     
-    return total_penalty
+    # Normalize distribution penalty
+    norm_dist_penalty = min(1.0, combined_penalty / 2.0)
+    
+    # TEMPORARY
+    return norm_dist_penalty
+    
+    # """ COLLECTION COUNT PENALTY """
+    
+    # # Count total chunks and unique topics
+    # total_chunks = 0
+    # topic_counts = {}
+    # for coll in state:
+    #     chunks_in_coll = len(coll['chunks'])
+    #     total_chunks += chunks_in_coll
+    #     for chunk in coll['chunks']:
+    #         topic = chunk['topic']
+    #         topic_counts[topic] = topic_counts.get(topic, 0) + 1
+    
+    # # Calculate minimum collections needed
+    # min_collections = max(topic_counts.values()) if topic_counts else 0
+    
+    # # Collection penalty: based on how far we are from optimal
+    # norm_coll_penalty = 0.0
+    # if min_collections > 0 and total_chunks > 0:
+    #     # Scale based on potential for optimization (0-1 range)
+    #     potential_range = total_chunks - min_collections
+    #     if potential_range > 0:
+    #         norm_coll_penalty = min(1.0, (N - min_collections) / potential_range)
+            
+    # """ WEIGHTING """
+    
+    # # Ensure weights sum to 1.0
+    # norm_weights_sum = DISTRIBUTION_WEIGHT + COLLECTION_COUNT_WEIGHT
+    # weight_coll = COLLECTION_COUNT_WEIGHT / norm_weights_sum
+    # weight_dist = DISTRIBUTION_WEIGHT / norm_weights_sum
+    
+    # # Apply weights and combine
+    # total_penalty = (
+    #     weight_coll * norm_coll_penalty +
+    #     weight_dist * norm_dist_penalty
+    # )
+    
+    # return total_penalty
 
 """ Move Probability Functions """
 
-def get_move_probs_static(state: List[Dict[str, Any]]) -> Dict[str, float]:
+def get_move_probs_static(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]]) -> Dict[str, float]:
     """
     Return static probabilities for move types (equal probability).
     
@@ -330,7 +383,7 @@ def get_move_probs_static(state: List[Dict[str, Any]]) -> Dict[str, float]:
     }
 
 
-def get_move_probs_adaptive(state: List[Dict[str, Any]]) -> Dict[str, float]:
+def get_move_probs_adaptive(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]]) -> Dict[str, float]:
     """
     Determine adaptive probabilities for move types based on current state.
     
@@ -341,42 +394,40 @@ def get_move_probs_adaptive(state: List[Dict[str, Any]]) -> Dict[str, float]:
     Returns:
         Dict[str, float]: Probabilities for each move type
     """
-    # Count occurrences of each topic
-    topic_counts = {}
+    
+    # Get current number of collections that are out of range (OOR)
+    N = len(state)
+    count_oor = 0
     for coll in state:
-        for chunk in coll['chunks']:
-            topic = chunk['topic']
-            topic_counts[topic] = topic_counts.get(topic, 0) + 1
+        cat = coll['size_category']
+        if cat is None:
+            count_oor += 1
+    percentage_oor = count_oor / N if N > 0 else 0
     
-    # Minimum collections is determined by the most frequent topic
-    min_collections = max(topic_counts.values()) if topic_counts else 0
-    current_collections = len(state)
-    
-    # If we're close to minimum collections, favor split move and swap operations
-    if current_collections <= min_collections * 1.5:
+    # If we have no OOR collections, favor move and swap operations
+    if percentage_oor < 0.1:
         return {
-            "swap": 0.4,
-            "move": 0.3, 
-            "merge": 0.2, 
-            "split": 0.1
+            "swap": 0.35,
+            "move": 0.35, 
+            "merge": 0.15, 
+            "split": 0.15
         }
-    # If we have more than double the collections necessary, favor merge operations
-    if current_collections > min_collections * 2:
+    # If we are getting close to OOR, favor a balanced approach
+    if percentage_oor > 0.2:
         return {
-            "move": 0.1, 
-            "swap": 0.2, 
-            "merge": 0.6,
-            "split": 0.1
+            "move": 0.25, 
+            "swap": 0.25, 
+            "merge": 0.25,
+            "split": 0.25
         }
-    # Otherwise, use balanced probabilities
+    # Otherwise, favor merge and split operations to reduce OOR collections
     else:
         return {
-            "move": 0.25,
-            "swap": 0.25,
-            "merge": 0.30,
-            "split": 0.20
+            "move": 0.0,
+            "swap": 0.0,
+            "merge": 0.5,
+            "split": 0.5
         }
-
 
 """ Initial Solution Functions """
 
@@ -459,7 +510,7 @@ def greedy_solution(chunks: List[Dict[str, Any]],
             # Create temporary state to evaluate cost
             temp_state = state.copy()
             temp_state[i] = new_collection
-            cost = compute_cost_enhanced(temp_state, size_ranges)
+            cost = compute_cost_enhanced(temp_state, size_ranges, value_extractor)
             
             # If this is better than current best, update best
             if cost < best_cost or (cost == best_cost and random.random() < GREEDY_RANDOMIZATION):
@@ -476,7 +527,7 @@ def greedy_solution(chunks: List[Dict[str, Any]],
         # Evaluate creating a new collection
         temp_state = state.copy()
         temp_state.append(new_coll)
-        new_cost = compute_cost_enhanced(temp_state, size_ranges)
+        new_cost = compute_cost_enhanced(temp_state, size_ranges, value_extractor)
         
         # Compare with best existing collection
         if new_cost < best_cost or (new_cost == best_cost and random.random() < GREEDY_RANDOMIZATION) or best_index < 0:
@@ -514,7 +565,7 @@ def propose_neighbor(state: List[Dict[str, Any]],
     move_made = False
     
     # Get move probabilities based on provided function
-    move_probs = get_move_probs(state)
+    move_probs = get_move_probs(state, size_ranges)
     
     # Select move type based on probabilities
     move_types = list(move_probs.keys())
@@ -672,7 +723,7 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
     start_time = time.time()
     current_state = initial_state
     best_state = copy.deepcopy(initial_state)
-    current_cost = compute_cost(current_state, size_ranges)
+    current_cost = compute_cost(current_state, size_ranges, value_extractor)
     best_cost = current_cost
     
     # Initialize temperature
@@ -697,7 +748,7 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
             continue
             
         # Calculate costs
-        new_cost = compute_cost(neighbor, size_ranges)
+        new_cost = compute_cost(neighbor, size_ranges, value_extractor)
         delta = new_cost - current_cost
         
         # Accept or reject move
