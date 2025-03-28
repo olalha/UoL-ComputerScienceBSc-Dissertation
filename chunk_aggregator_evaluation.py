@@ -26,7 +26,7 @@ import copy
 
 # Import required modules from the project
 from _eval.rulebook_gen import generate_rulebook
-from chunk_manager.chunk_aggregator import aggregate_chunks
+from chunk_manager.chunk_aggregator import aggregate_chunks, compute_cost_enhanced
 from chunk_manager.chunk_partitioner import get_chunks
 from chunk_manager.rulebook_parser import validate_rulebook_values
 from dataset_manager.dataset_visualizer import plot_collection_distribution
@@ -41,7 +41,7 @@ from dataset_manager.dataset_analyser import get_basic_counts, get_collection_di
 INITIAL_SOLUTION_METHODS = ["simple", "greedy"]
 COST_FUNCTIONS = ["simple", "enhanced"]
 MOVE_SELECTORS = ["static", "adaptive"]
-COOLING_RATES = [0.995]
+COOLING_RATES = [0.9975]
 
 # Test run parameters
 NUM_RUNS_PER_CONFIG = 2  # Number of times to run each configuration
@@ -57,28 +57,24 @@ MAX_WORKERS = max(1, mp.cpu_count() - 1)  # Use all but one CPU core
 RULEBOOK_PARAMS = [
     {
         "mode": "word",
-        "content_title": "30k Word - Topic Skewed - Complex Ranges",
-        "total": 50000,
+        "content_title": "EVAL - RULEBOOK 1",
+        "total": 20000,
         "topics": [
             "Quality", "Price", "Design", "Performance", "Support",
             "Reliability", "Innovation", "Ergonomics", "Value", "Features",
-            "Durability", "Usability", "Efficiency", "Compatibility"
         ],
-        "topic_concentration": 5.0,
+        "topic_concentration": 2.0,
         "sentiment_concentration": 2.0,
         "chunk_size_avg": 60,
         "chunk_size_max_deviation": 20,
         "chunk_size_range_factor": 0.6,
-        "collection_ranges_count": 6,
+        "collection_ranges_count": 3,
         "collection_ranges_max_val": 180,
         "collection_ranges_min_val": 120,
         "collection_distribution_concentration": 4.0,
-        "random_seed": 33434
+        "random_seed": 1234
     }
 ]
-
-# Out-of-range vs. in-range distribution match weights
-DISTRIBUTION_MATCH_OOR_VS_IR = (0.50, 0.50) 
 
 # Visualization options
 CREATE_VISUALIZATIONS = True
@@ -153,41 +149,8 @@ def calculate_distribution_match(state: List[Dict[str, Any]],
     Calculate how well the solution matches the target distribution.
     Returns a normalized score between 0 and 1, where 1 is perfect match.
     """
-    # Handle empty state
-    total_collections = len(state)
-    if total_collections == 0:
-        return 0.0
-    
-    # Count collections by category
-    category_counts = {}
-    out_of_range_count = 0
-    
-    for collection in state:
-        category = collection.get('size_category')
-        if category is not None:
-            category_counts[category] = category_counts.get(category, 0) + 1
-        else:
-            out_of_range_count += 1
-    
-    # Score component 1: Percentage of in-range collections
-    in_range_score = 1.0 - (out_of_range_count / total_collections)
-    
-    # Score component 2: Distribution match quality
-    distribution_score = 0.0
-    if total_collections > out_of_range_count:
-        # Use a standard statistical distance measure like total variation distance
-        total_variation = 0.0
-        for i, size_range in enumerate(size_ranges):
-            target = size_range['target_fraction']
-            actual = category_counts.get(i, 0) / total_collections
-            total_variation += abs(actual - target)
-        
-        # Normalize to [0,1] (total variation distance is in [0,2])
-        distribution_score = 1.0 - (total_variation / 2.0)
-    
-    # Combine scores with equal weighting
-    weights = DISTRIBUTION_MATCH_OOR_VS_IR
-    return weights[0] * in_range_score + weights[1] * distribution_score
+    # Use the enhanced cost function to calculate the cost
+    return 1 - compute_cost_enhanced(state, size_ranges)
 
 # ============================================================================
 # EVALUATION FUNCTIONS

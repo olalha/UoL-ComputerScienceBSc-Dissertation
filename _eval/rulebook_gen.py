@@ -260,7 +260,5 @@ def _generate_collection_ranges(
         })
         current_start = currend_end + 1
         currend_end = current_start + range_size
-        
-    print(collection_ranges)
     
     return collection_ranges
