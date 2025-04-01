@@ -63,6 +63,19 @@ def create_dataset_structure(
         print("create_dataset_structure: Failed to allocate chunks to collections.")
         return None
     
+    # TEMP - COST CHECK
+    from chunk_manager.chunk_aggregator import compute_cost_enhanced, compute_total_wc
+    
+    # Calculate the cost and print
+    collection_mode = rulebook['collection_mode']
+    if collection_mode == "word":
+        value_extractor = compute_total_wc
+    elif collection_mode == "chunk":
+        value_extractor = lambda collection: len(collection)
+    cost = compute_cost_enhanced(solution, rulebook['collection_ranges'], value_extractor)
+    print(f"{rulebook['content_title']} - Dataset Final Solution Cost: {cost}")
+    
+    
     # Prepare dataset structure
     collections = []
     for item in solution:

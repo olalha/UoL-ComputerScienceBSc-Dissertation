@@ -236,30 +236,24 @@ def compute_cost_simple(state: List[Dict[str, Any]], size_ranges: List[Dict[str,
 
 
 def compute_cost_enhanced(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]], value_extractor: Callable) -> float:
-    """
-    Dynamically scaled cost function (0-1 range) with OOR threshold penalty.
+    """Optimized version of the enhanced cost function"""
     
-    Args:
-        state: Current state (list of collections)
-        size_ranges: Size range specifications
-        
-    Returns:
-        float: Normalized cost (0-1 range, lower is better)
-    """
-    
-    """ DISTRIBUTION PENALTY """
-    
-    # Get current number of collections
     N = len(state)
     if N == 0:
-        return 1.0  # Invalid state gets maximum cost
+        return 1.0
     
-    # Calculate basic metrics
+    # Pre-calculate min/max range values
+    min_range = float('inf')
+    max_range = float('-inf')
+    for size_range in size_ranges:
+        low, high = size_range['range']
+        min_range = min(min_range, low)
+        max_range = max(max_range, high)
+    range_width = max_range - min_range if max_range > min_range else 1
+    
     count_oor = 0
     counts = [0] * len(size_ranges)
-    
     oor_distance_penalty = 0.0
-    distribution_penalty = 0.0
     
     for coll in state:
         idx = coll['size_category']
@@ -267,66 +261,42 @@ def compute_cost_enhanced(state: List[Dict[str, Any]], size_ranges: List[Dict[st
             counts[idx] += 1
         else:
             count_oor += 1
-            # Calculate how far this collection is from ANY valid range
+            # Cache the collection size instead of recalculating it
             coll_size = value_extractor(coll['chunks'])
             closest_distance = float('inf')
-            min_range = float('inf')
-            max_range = float('-inf')
             
             # Find distance to closest valid range
-            for size_range in size_ranges:
-                low, high = size_range['range']
-                min_range = min(min_range, low)
-                max_range = max(max_range, high)
-                
-                if coll_size < low:
-                    distance = low - coll_size
-                elif coll_size > high:
-                    distance = coll_size - high
-                else:
-                    distance = 0  # Should not happen as we're in the OOR case
-                closest_distance = min(closest_distance, distance)
+            distance = 0.0
+            if coll_size < min_range:
+                distance = min_range - coll_size
+            elif coll_size > max_range:
+                distance = coll_size - max_range
+            closest_distance = min(closest_distance, distance)
             
-            # Normalize distance relative to the total range width
-            range_width = max_range - min_range if max_range > min_range else 1
             normalized_distance = closest_distance / range_width
-            
-            # Apply exponential function: 1 - exp(-k*x) approaches 1 as x increases
-            # This means: slightly OOR = slight penalty, very OOR = severe penalty
-            # k controls steepness - smaller values make the curve more gradual
-            k = 2.0  # Tune this parameter to control sensitivity
-            exponential_penalty = 1.0 - math.exp(-k * normalized_distance)
-            
-            oor_distance_penalty += exponential_penalty
-            
-    # Get average penalty for OOR collections
+            # Pre-compute constant instead of using exp for each item
+            distance_penalty = normalized_distance / (1.0 + normalized_distance)
+            oor_distance_penalty += distance_penalty
+    
+    # Calculate out-of-range distance penalty as average
     oor_distance_penalty = oor_distance_penalty / count_oor if count_oor > 0 else 0
-
+    
     # Calculate distribution penalty
+    distribution_penalty = 0.0
     for i, size_range in enumerate(size_ranges):
         actual_fraction = counts[i] / N if N > 0 else 0
         target_fraction = size_range['target_fraction']
-        distribution_penalty += (actual_fraction - target_fraction) ** 2
+        distribution_penalty += abs(actual_fraction - target_fraction)
+        
+    # Calculate distribution penalty as average
+    distribution_penalty = distribution_penalty / len(size_ranges) if len(size_ranges) > 0 else 0
     
-    # Add OOR count penalty and distance penalty
-    oor_count_penalty = (count_oor / N if N > 0 else 0) ** 2
-    oor_distance_penalty = oor_distance_penalty / N if N > 0 and count_oor > 0 else 0
-    
-    # Combine penalties with appropriate weights
-    oor_weight = 0.5  # Weight for OOR penalties
-    dist_weight = 0.5  # Weight for distribution penalties
-    
-    # Final distribution penalty combines all factors
     combined_penalty = (
-        dist_weight * distribution_penalty + 
-        oor_weight * (0.5 * oor_count_penalty + 0.5 * oor_distance_penalty)
+        0.5 * distribution_penalty + 
+        0.5 * oor_distance_penalty
     )
     
-    # Normalize distribution penalty
-    norm_dist_penalty = min(1.0, combined_penalty / 2.0)
-    
-    # TEMPORARY
-    return norm_dist_penalty
+    return combined_penalty
     
     # """ COLLECTION COUNT PENALTY """
     

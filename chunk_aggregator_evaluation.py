@@ -603,7 +603,6 @@ def main():
         
     print(f"Successfully generated {len(rulebooks)} rulebooks")
     
-    
     # Save configuration parameters
     config_summary = {
         "initial_solution_methods": INITIAL_SOLUTION_METHODS,

@@ -135,6 +135,13 @@ def generate_rulebook(
         "collection_ranges": collection_ranges
     }
     
+    # Save the rulebook to a JSON file
+    from view_components.file_loader import validate_and_save_rulebook
+    import time
+    formatted_time = time.strftime("%Y-%m-%d %H-%M-%S", time.localtime())
+    rulebook_name = "Generated Rulebook - " + formatted_time + ".json"
+    validate_and_save_rulebook(rulebook_name, rulebook, overwrite=True)
+    
     return rulebook
 
 def _round_and_ensure_sum_to_one(values: List[float]) -> List[float]:
