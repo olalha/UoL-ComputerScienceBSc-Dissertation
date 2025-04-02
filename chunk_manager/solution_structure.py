@@ -1,3 +1,8 @@
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.colors import LinearSegmentedColormap
+import numpy as np
+
 class SolutionStructure:
     """
     A specialized data structure for representing and manipulating collections of chunks.
@@ -8,14 +13,14 @@ class SolutionStructure:
     - Distribution of collections across size ranges
     """
     
-    def __init__(self, size_ranges, target_proportions, mode="word_count"):
+    def __init__(self, size_ranges, target_proportions, mode="word"):
         """
         Initialize the solution structure.
         
         Args:
             size_ranges: List of [min_size, max_size] ranges
             target_proportions: List of target proportions for each range
-            mode: "word_count" or "chunk_count" - determines how collection sizes are measured
+            mode: "word" or "chunk" - determines how collection sizes are measured
         """
         # Find global min and max from user ranges
         self.global_min = min(r[0] for r in size_ranges) if size_ranges else 1
@@ -33,7 +38,7 @@ class SolutionStructure:
         self.user_target_proportions = target_proportions.copy()
         self.target_proportions = [0.0] + target_proportions + [0.0]
         
-        self.mode = mode  # "word_count" or "chunk_count"
+        self.mode = mode  # "word" or "chunk"
         
         # Initialize collections list
         self.collections = []
@@ -76,27 +81,27 @@ class SolutionStructure:
     
     def add_chunks_to_collection(self, collection_idx, chunks):
         """
-        Add chunks to a specific collection.
+        Add chunks to a specific collection. Will only add all chunks if none of the topics already exist.
         
         Args:
             collection_idx: Index of the collection to add to
             chunks: List of (topic, sentiment, word_count) tuples
         
         Returns:
-            Number of successfully added chunks
+            True if all chunks were successfully added, False otherwise
         """
         if collection_idx >= len(self.collections) or self.collections[collection_idx] is None:
-            return 0
+            return False
         
         collection = self.collections[collection_idx]
         
         # Pre-validate to ensure no topic already exists in the collection
         for topic, sentiment, word_count in chunks:
             if topic in collection['topics']:
-                return 0  # If any topic already exists, add nothing
+                return False  # If any topic already exists, add nothing
         
         # Calculate old size for range tracking
-        old_size = collection['total_word_count'] if self.mode == "word_count" else collection['total_chunks']
+        old_size = collection['total_word_count'] if self.mode == "word" else collection['total_chunks']
         
         # Add all chunks
         for topic, sentiment, word_count in chunks:
@@ -113,51 +118,52 @@ class SolutionStructure:
             collection['avg_word_count'] = collection['total_word_count'] / collection['total_chunks']
         
         # Update size range mapping
-        new_size = collection['total_word_count'] if self.mode == "word_count" else collection['total_chunks']
+        new_size = collection['total_word_count'] if self.mode == "word" else collection['total_chunks']
         self._update_size_range_mapping(collection_idx, old_size, new_size)
         
-        return len(chunks)
+        return True
     
     def remove_chunks_from_collection(self, collection_idx, topics):
         """
         Remove chunks with specified topics from a collection.
+        Will only remove all chunks if all topics exist in the collection.
         
         Args:
             collection_idx: Index of the collection to remove from
             topics: List of topics to remove
         
         Returns:
-            Number of successfully removed chunks
+            True if all chunks were successfully removed, False otherwise
         """
         if collection_idx >= len(self.collections) or self.collections[collection_idx] is None:
-            return 0
+            return False
         
         collection = self.collections[collection_idx]
         
-        # Calculate old size for range tracking
-        old_size = collection['total_word_count'] if self.mode == "word_count" else collection['total_chunks']
-        
-        # Count successful removals
-        removed_count = 0
-        
+        # First check if all topics exist in the collection
         for topic in topics:
-            if topic in collection['topics']:
-                sentiment, word_count = collection['topics'][topic]
-                
-                # Remove from topics dictionary
-                del collection['topics'][topic]
-                
-                # Update metadata
-                collection['total_chunks'] -= 1
-                collection['total_word_count'] -= word_count
-                
-                # Remove from chunks_by_size
-                for i, (t, wc) in enumerate(collection['chunks_by_size']):
-                    if t == topic:
-                        collection['chunks_by_size'].pop(i)
-                        break
-                
-                removed_count += 1
+            if topic not in collection['topics']:
+                return False
+        
+        # Calculate old size for range tracking
+        old_size = collection['total_word_count'] if self.mode == "word" else collection['total_chunks']
+        
+        # Remove all topics
+        for topic in topics:
+            sentiment, word_count = collection['topics'][topic]
+            
+            # Remove from topics dictionary
+            del collection['topics'][topic]
+            
+            # Update metadata
+            collection['total_chunks'] -= 1
+            collection['total_word_count'] -= word_count
+            
+            # Remove from chunks_by_size
+            for i, (t, wc) in enumerate(collection['chunks_by_size']):
+                if t == topic:
+                    collection['chunks_by_size'].pop(i)
+                    break
         
         # Update average word count
         if collection['total_chunks'] > 0:
@@ -166,10 +172,10 @@ class SolutionStructure:
             collection['avg_word_count'] = 0
         
         # Update size range mapping
-        new_size = collection['total_word_count'] if self.mode == "word_count" else collection['total_chunks']
+        new_size = collection['total_word_count'] if self.mode == "word" else collection['total_chunks']
         self._update_size_range_mapping(collection_idx, old_size, new_size)
         
-        return removed_count
+        return True
     
     def remove_collection(self, collection_idx):
         """
@@ -317,7 +323,7 @@ class SolutionStructure:
         
         collection = self.collections[collection_idx]
         
-        if self.mode == "word_count":
+        if self.mode == "word":
             return collection['total_word_count']
         else:
             return collection['total_chunks']
@@ -405,6 +411,16 @@ class SolutionStructure:
         
         return deviations
     
+    def get_total_absolute_deviation(self):
+        """
+        Calculate the total absolute deviation from target proportions.
+        
+        Returns:
+            Total absolute deviation as a float
+        """
+        deviations = self.get_size_range_deviation()
+        return sum(abs(dev) for _, dev in deviations)
+    
     def get_overpopulated_ranges(self):
         """
         Get size ranges that have more collections than their target proportion.
@@ -473,7 +489,7 @@ class SolutionStructure:
         new_chunks = len(chunks)
         new_word_count = sum(wc for _, _, wc in chunks)
         
-        if self.mode == "word_count":
+        if self.mode == "word":
             new_size = collection['total_word_count'] + new_word_count
         else:
             new_size = collection['total_chunks'] + new_chunks
@@ -504,7 +520,7 @@ class SolutionStructure:
         # Calculate hypothetical new size
         removed_word_count = sum(collection['topics'][topic][1] for topic in topics if topic in collection['topics'])
         
-        if self.mode == "word_count":
+        if self.mode == "word":
             new_size = collection['total_word_count'] - removed_word_count
         else:
             new_size = collection['total_chunks'] - len(topics)
@@ -619,3 +635,161 @@ class SolutionStructure:
         
         # Update the collection's size range
         self.collection_size_range[collection_idx] = new_range_idx
+
+    """ VISUALIZATION FUNCTIONS """
+
+    def visualize_solution(self, fig=None, ax=None, title=None, show=True):
+        """
+        Creates a bar chart visualization of the current solution with vertical range-colored backgrounds.
+        
+        Args:
+            fig: Existing figure to update (or None to create new)
+            ax: Existing axis to update (or None to create new)
+            title: Optional title for the plot
+            show: Whether to show the plot
+        
+        Returns:
+            fig, ax: The figure and axis objects
+        """
+        if fig is None or ax is None:
+            fig, ax = plt.subplots(figsize=(12, 6))
+            
+        # Clear the axis for updates
+        ax.clear()
+        
+        # Get active collections and sort them by size (descending)
+        active_collections = self.get_active_collection_indices()
+        active_collections.sort(key=lambda idx: self.get_collection_size(idx), reverse=True)
+        
+        if not active_collections:
+            ax.text(0.5, 0.5, "No collections to display", 
+                    horizontalalignment='center', verticalalignment='center')
+            if show:
+                plt.show()
+            return fig, ax
+        
+        # Vibrant colors for different sentiments
+        sentiment_colors = {
+            'positive': '#00CC00',  # Bright green
+            'neutral': '#808080',   # Medium gray
+            'negative': '#FF4500'   # Bright red-orange
+        }
+        
+        # Set up the bars
+        collection_positions = np.arange(len(active_collections))
+        
+        # Define distinct colors for each size range
+        range_colors = {
+            self.below_min_range_idx: '#FFCCCC',  # Light red for below minimum
+            self.above_max_range_idx: '#FFAAAA',  # Darker red for above maximum
+        }
+        
+        # Generate colors for user-defined ranges
+        num_user_ranges = len(self.user_size_ranges)
+        if num_user_ranges > 0:
+            # Create a color map from light blue to dark blue
+            blues = plt.cm.Blues(np.linspace(0.3, 0.9, num_user_ranges))
+            
+            for i in range(num_user_ranges):
+                # Map range to the adjusted index (accounting for below_min_range)
+                range_colors[i+1] = blues[i]
+        
+        # Identify the range for each collection
+        collection_ranges = [self.get_collection_range_idx(idx) for idx in active_collections]
+        
+        # Draw vertical background colors for ranges by identifying contiguous groups
+        current_range = None
+        start_idx = 0
+        range_labels = {}  # To track which ranges are present in the chart
+        
+        for i, range_idx in enumerate(collection_ranges + [None]):  # Add None to handle the last group
+            if range_idx != current_range:
+                # End of a range group, draw the background if we were tracking a range
+                if current_range is not None:
+                    color = range_colors.get(current_range, '#EEEEEE')
+                    ax.axvspan(start_idx - 0.5, i - 0.5, color=color, alpha=0.2, zorder=0)
+                    
+                    # Keep track of this range for the legend
+                    if current_range == self.below_min_range_idx:
+                        range_labels[f"Below min (<{self.global_min})"] = color
+                    elif current_range == self.above_max_range_idx:
+                        range_labels[f"Above max (>{self.global_max})"] = color
+                    else:
+                        min_size, max_size = self.size_ranges[current_range]
+                        range_labels[f"Range {current_range-1}: {min_size}-{max_size}"] = color
+                    
+                # Start new range group
+                start_idx = i
+                current_range = range_idx
+        
+        # Plot each collection
+        for i, coll_idx in enumerate(active_collections):
+            chunks = self.get_all_chunks(coll_idx)
+            
+            # Sort chunks by size within each collection for better visualization
+            chunks_sorted = sorted(chunks, key=lambda x: x[2], reverse=True)
+            
+            # Draw chunks within collection
+            current_height = 0
+            for topic, sentiment, word_count in chunks_sorted:
+                # Size of the chunk depends on the mode
+                chunk_size = word_count if self.mode == "word" else 1
+                
+                # Draw chunk as a rectangle with only top border
+                rect = patches.Rectangle(
+                    (i - 0.3, current_height),
+                    0.6, 
+                    chunk_size,
+                    facecolor=sentiment_colors.get(sentiment, '#AAAAAA'), 
+                    edgecolor='none',
+                    linewidth=0,
+                    alpha=0.9
+                )
+                ax.add_patch(rect)
+                
+                # Add just a top border line
+                ax.plot(
+                    [i - 0.3, i + 0.3],  # x points: left and right of bar
+                    [current_height, current_height],  # y points: top edge
+                    color='black',
+                    linewidth=1,
+                    solid_capstyle='butt'
+                )
+                
+                # Increment by the chunk size in the current mode
+                current_height += chunk_size
+        
+        # Set labels and title 
+        ax.set_xlabel('Collections (sorted by size)')
+        ax.set_ylabel(f'{"Word" if self.mode == "word" else "Chunk"} Count')
+        ax.set_title(title or f"Solution Visualization ({self.mode}) - {len(active_collections)} Collections")
+        
+        # Set x-axis ticks
+        ax.set_xticks(collection_positions)
+        ax.set_xticklabels([f"" for idx in active_collections])
+        
+        # Create legend elements
+        legend_elements = []
+        
+        # Add sentiment legend patches
+        for sent, color in sentiment_colors.items():
+            legend_elements.append(
+                patches.Patch(facecolor=color, edgecolor='none', label=f"{sent.capitalize()}")
+            )
+        
+        # Add range legend patches - sort by range index for better readability
+        for label, color in sorted(range_labels.items(), key=lambda x: x[0]):
+            legend_elements.append(
+                patches.Patch(facecolor=color, alpha=0.4, edgecolor='none', label=label)
+            )
+        
+        # Add the legend in a good position
+        ax.legend(handles=legend_elements, loc='upper right', fontsize='small')
+        
+        # Adjust layout
+        plt.tight_layout()
+        
+        if show:
+            plt.show()
+        
+        return fig, ax
