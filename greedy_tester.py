@@ -57,20 +57,20 @@ solution = create_greedy_initial_solution(
     size_ranges=size_ranges, 
     target_proportions=target_proportions, 
     mode=mode, 
-    fill_factor=1.0
+    fill_factor=0.75
 )
 
 end_time = time.time()
 print(f"Greedy solution created in {end_time - start_time:.2f} seconds.")
 
-final_chunks = []
+final_chunks = 0
 for idx in solution.get_active_collection_indices():
-    final_chunks.extend(solution.get_all_chunks(idx))
-if len(final_chunks) != len(chunks):
+    final_chunks += len(solution.get_all_chunks(idx))
+if final_chunks != len(chunks):
     print("Warning: The number of chunks in the GREEDY solution does not match the original chunks.")
-    print(f"Original chunks: {len(chunks)}, Greedy chunks: {len(final_chunks)}")
+    print(f"Original chunks: {len(chunks)}, Greedy chunks: {final_chunks}")
 else:
-    print("The number of chunks in the solution matches the original chunks.")
+    print("The number of chunks in the GREEDY solution matches the original chunks.")
 
 solution.visualize_solution()
 
@@ -82,13 +82,13 @@ solution = optimize_collections_with_simulated_annealing(solution)
 end_time = time.time()
 print(f"Simulated annealing optimization completed in {end_time - start_time:.2f} seconds.")
 
-final_chunks = []
+final_chunks = 0
 for idx in solution.get_active_collection_indices():
-    final_chunks.extend(solution.get_all_chunks(idx))
-if len(final_chunks) != len(chunks):
+    final_chunks += len(solution.get_all_chunks(idx))
+if final_chunks != len(chunks):
     print("Warning: The number of chunks in the OPTIMIZED solution does not match the original chunks.")
-    print(f"Original chunks: {len(chunks)}, Optimized chunks: {len(final_chunks)}")
+    print(f"Original chunks: {len(chunks)}, Optimized chunks: {final_chunks}")
 else:
-    print("The number of chunks in the solution matches the original chunks.")
+    print("The number of chunks in the OPTIMIZED solution matches the original chunks.")
     
 solution.visualize_solution()

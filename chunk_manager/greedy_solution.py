@@ -73,14 +73,21 @@ def estimate_collection_counts(chunks, size_ranges, target_proportions, mode, fi
     """
     total_size = sum(chunk[2] if mode == "word" else 1 for chunk in chunks)
     
-    estimated_collections = {}
+    total_number_of_collection_estimate = 0
     for i, (min_size, max_size) in enumerate(size_ranges):
         # Estimate average size of collections in this range using fill_factor
         estimated_size = min_size + fill_factor * (max_size - min_size)
         # Calculate size budget based on target proportion
         size_budget = target_proportions[i] * total_size
         # Calculate number of collections needed
-        estimated_collections[i] = max(0, round(size_budget / estimated_size))
+        total_number_of_collection_estimate += max(0, round(size_budget / estimated_size))
+    
+    estimated_collections = {}
+    for i in range(len(size_ranges)):
+        estimated_collections[i] = round(target_proportions[i] * total_number_of_collection_estimate)
+        
+    for i in estimated_collections:
+        print(f"    Estimated collections for range {i}: {estimated_collections[i]}")
     
     return estimated_collections
 
