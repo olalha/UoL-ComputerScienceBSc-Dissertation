@@ -4,9 +4,11 @@ import copy
 
 # Global constants for simulated annealing algorithm
 INITIAL_TEMPERATURE = 100.0
-COOLING_RATE = 0.95
+COOLING_RATE = 0.99
 MAX_ITERATIONS = 10000
 OOR_PENALTY_FACTOR = 2.0
+
+""" REMOVE TEMPT TESTING VALUES """
 
 last_number_of_chunks = 0
 last_move = None
@@ -56,12 +58,8 @@ def optimize_collections_with_simulated_annealing(initial_solution, max_iteratio
     # Main simulated annealing loop
     while iteration < max_iterations and no_improvement_count < max_no_improvement:
         
-        track_size_changes(current_solution, f"Iteration {iteration} - Start of iteration")
-
         # Apply a move to current solution
         move_applied, move_info = apply_random_move(current_solution, temperature/initial_temperature)
-        
-        track_size_changes(current_solution, f"Iteration {iteration} - After move application")
         
         # If no valid move could be applied, try again
         if not move_applied:
@@ -70,8 +68,6 @@ def optimize_collections_with_simulated_annealing(initial_solution, max_iteratio
         
         # Calculate new cost
         new_cost = calculate_cost(current_solution, temperature/initial_temperature)
-        
-        track_size_changes(current_solution, f"Iteration {iteration} - After cost calculation")
         
         # Decide whether to accept the move
         delta_cost = new_cost - current_cost
@@ -94,21 +90,17 @@ def optimize_collections_with_simulated_annealing(initial_solution, max_iteratio
             revert_move(current_solution, move_info)
             no_improvement_count += 1
             
-            track_size_changes(current_solution, f"Iteration {iteration} - After move reversion")
-            
-        track_size_changes(current_solution, f"Iteration {iteration} - After move acceptance/rejection")
-        
         # Report progress via callback if provided
         if callback:
             collection_list = [current_solution.get_all_chunks(idx) 
                               for idx in current_solution.get_active_collection_indices()]
             callback(iteration, temperature, current_cost, best_cost, collection_list, accepted)
             
-        track_size_changes(current_solution, f"Iteration {iteration} - End of iteration")
-        
         # Cool the temperature
         temperature *= cooling_rate
         iteration += 1
+    
+    print(f"Simulated annealing completed after {iteration} iterations.")
     
     return best_solution
 
@@ -136,8 +128,6 @@ def calculate_cost(solution, normalized_temperature):
         
         total_cost += deviation
         
-    track_size_changes(solution, "After calculating cost")
-    
     return total_cost
 
 def apply_random_move(solution, normalized_temp):
@@ -171,36 +161,19 @@ def apply_random_move(solution, normalized_temp):
     # Choose move type
     move_type = random.choices(move_types, weights=probabilities, k=1)[0]
     
-    track_size_changes(solution, "After selecting move type")
-    
     global last_move
     last_move = move_type
     
     # Apply the selected move
     if move_type == "transfer_chunk":
-        
         return_val = transfer_chunk(solution, overpopulated, underpopulated)
-        
-        track_size_changes(solution, "After transfer_chunk moved performed")
-        
     elif move_type == "swap_chunks":
-        
         return_val = swap_chunks(solution, overpopulated, underpopulated)
-        
-        track_size_changes(solution, "After swap_chunks moved performed")
-        
     else:
-        
         return_val = split_collection(solution, overpopulated, underpopulated)
-        
-        track_size_changes(solution, "After split_collection moved performed")
-        
-    track_size_changes(solution, f"After obtained return value - MOVE: {move_type}")
-        
+    
     return return_val
         
-        
-
 def transfer_chunk(solution, overpopulated, underpopulated):
     """
     Transfer chunks from a collection in an overpopulated range to move it to an underpopulated range.
@@ -349,20 +322,14 @@ def swap_chunks(solution, overpopulated, underpopulated):
     over_range_idx = overpopulated[0][0]
     under_range_idx = underpopulated[0][0]
     
-    track_size_changes(solution, "After getting overpopulated and underpopulated ranges")
-    
     # Determine if overpopulated range is smaller than underpopulated
     over_min, over_max = solution.size_ranges[over_range_idx]
     under_min, under_max = solution.size_ranges[under_range_idx]
     overpopulated_is_smaller = over_max < under_min
     
-    track_size_changes(solution, "After determining range sizes")
-    
     # Get collections from both ranges
     over_collections = solution.get_collections_by_size_range(over_range_idx)
     under_collections = solution.get_collections_by_size_range(under_range_idx)
-    
-    track_size_changes(solution, "After getting collections from ranges")
     
     if not over_collections or not under_collections:
         return False, None
@@ -373,16 +340,12 @@ def swap_chunks(solution, overpopulated, underpopulated):
     collection1_idx = over_collections[0]
     collection2_idx = under_collections[0]
     
-    track_size_changes(solution, "After sorting collections by chunk count")
-    
     # Get and sort chunks based on strategy
     chunks1 = solution.get_chunks_by_size_order(collection1_idx)
     chunks2 = solution.get_chunks_by_size_order(collection2_idx)
     
     if not chunks1 or not chunks2:
         return False, None
-    
-    track_size_changes(solution, "After getting chunks from collections")
     
     if overpopulated_is_smaller:
         # Swap small from overpopulated with large from underpopulated
@@ -393,33 +356,23 @@ def swap_chunks(solution, overpopulated, underpopulated):
         chunks1.sort(key=lambda x: x[2], reverse=True)  # Largest first
         chunks2.sort(key=lambda x: x[2])  # Smallest first
         
-    track_size_changes(solution, "After sorting chunks for swap")
-    
     # Find a valid swap that moves collection1 to an underpopulated range
     for chunk1 in chunks1:
         if not solution.can_add_chunk_to_collection(collection2_idx, chunk1[0]):
             continue
         
-        track_size_changes(solution, "After checking chunk1 for swap")
-            
         for chunk2 in chunks2:
             if not solution.can_add_chunk_to_collection(collection1_idx, chunk2[0]):
                 continue
             
-            track_size_changes(solution, "After checking chunk2 for swap")
-                
             # Calculate new sizes after swap
             coll1_size = solution.get_collection_size(collection1_idx)
             coll2_size = solution.get_collection_size(collection2_idx)
-            
-            track_size_changes(solution, "After getting collection sizes")
             
             chunk1_size = chunk1[2] if solution.mode == "word" else 1
             chunk2_size = chunk2[2] if solution.mode == "word" else 1
             
             new_coll1_size = coll1_size - chunk1_size + chunk2_size
-            
-            track_size_changes(solution, "After calculating new collection sizes")
             
             # Check if swap moves collection1 to an underpopulated range
             for range_idx, _ in underpopulated:
@@ -461,8 +414,6 @@ def swap_chunks(solution, overpopulated, underpopulated):
                     
                     return True, move_info
                 
-    track_size_changes(solution, "No valid swap found")
-    
     return False, None
 
 def split_collection(solution, overpopulated, underpopulated):

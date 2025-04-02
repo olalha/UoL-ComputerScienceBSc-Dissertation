@@ -716,7 +716,7 @@ class SolutionStructure:
                         range_labels[f"Above max (>{self.global_max})"] = color
                     else:
                         min_size, max_size = self.size_ranges[current_range]
-                        range_labels[f"Range {current_range-1}: {min_size}-{max_size}"] = color
+                        range_labels[f"Range {current_range}: {min_size}-{max_size}"] = color
                     
                 # Start new range group
                 start_idx = i

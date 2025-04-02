@@ -85,9 +85,6 @@ def estimate_collection_counts(chunks, size_ranges, target_proportions, mode, fi
     estimated_collections = {}
     for i in range(len(size_ranges)):
         estimated_collections[i] = round(target_proportions[i] * total_number_of_collection_estimate)
-        
-    for i in estimated_collections:
-        print(f"    Estimated collections for range {i}: {estimated_collections[i]}")
     
     return estimated_collections
 
@@ -201,6 +198,7 @@ def allocate_chunks(solution, sorted_chunks, estimated_collections, size_ranges,
             else:
                 final_collection_idx = best_collection_idx
                 solution.add_chunks_to_collection(final_collection_idx, [current_chunk])
+                solution.remove_collection(new_collection_idx)
             
         # Update allocated collections count and adjust current max range if needed
         collection_range = solution.get_collection_range_idx(final_collection_idx)
