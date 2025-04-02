@@ -14,16 +14,17 @@ RULEBOOK_PARAMS = {
         "topics": [
             "Quality", "Price", "Design", "Performance", "Support",
             "Reliability", "Innovation", "Ergonomics", "Value", "Features",
+            "Usability", "Compatibility", "Durability", "Flexibility", "Aesthetics",
         ],
         "topic_concentration": 2.0,
         "sentiment_concentration": 2.0,
         "chunk_size_avg": 60,
         "chunk_size_max_deviation": 20,
         "chunk_size_range_factor": 0.6,
-        "collection_ranges_count": 8,
+        "collection_ranges_count": 6,
         "collection_ranges_max_val": 150,
         "collection_ranges_min_val": 50,
-        "collection_distribution_concentration": 4.0,
+        "collection_distribution_concentration": 100.0,
         "random_seed": 1234
 }
 

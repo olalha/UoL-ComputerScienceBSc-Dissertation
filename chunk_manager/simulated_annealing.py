@@ -5,8 +5,18 @@ import copy
 # Global constants for simulated annealing algorithm
 INITIAL_TEMPERATURE = 100.0
 COOLING_RATE = 0.99
-MAX_ITERATIONS = 10000
-OOR_PENALTY_FACTOR = 2.0
+MAX_ITERATIONS = 500000
+
+# Penalty factor for out-of-range collections
+#   Factor to apply to the deviation of collections 
+#   that are out of range as temperature decreases
+OOR_PENALTY_FACTOR = 3.0
+
+# Selection bias for chunk selection
+# = 0.0: linear selection
+# = 1.0: linear weighting
+# > 1.0: exponential weighting
+SELECTION_BIAS = 0
 
 """ REMOVE TEMPT TESTING VALUES """
 
@@ -66,6 +76,8 @@ def optimize_collections_with_simulated_annealing(initial_solution, max_iteratio
             iteration += 1
             continue
         
+        print(f"Iteration {iteration}: Move applied: {move_info['type']}")
+        
         # Calculate new cost
         new_cost = calculate_cost(current_solution, temperature/initial_temperature)
         
@@ -83,6 +95,9 @@ def optimize_collections_with_simulated_annealing(initial_solution, max_iteratio
                 best_solution = copy.deepcopy(current_solution)
                 best_cost = new_cost
                 no_improvement_count = 0
+                
+                print(f"New best solution found at iteration {iteration} with temp {temperature}: cost = {best_cost}")
+                
             else:
                 no_improvement_count += 1
         else:
@@ -97,10 +112,14 @@ def optimize_collections_with_simulated_annealing(initial_solution, max_iteratio
             callback(iteration, temperature, current_cost, best_cost, collection_list, accepted)
             
         # Cool the temperature
-        temperature *= cooling_rate
+        if accepted:
+            temperature *= cooling_rate
         iteration += 1
     
     print(f"Simulated annealing completed after {iteration} iterations.")
+    print(f"No improvement count: {no_improvement_count}")
+    print(f"Final temperature: {temperature:.4f}")
+    print(f"Best cost: {best_cost}")
     
     return best_solution
 
@@ -123,8 +142,7 @@ def calculate_cost(solution, normalized_temperature):
         
         # Apply extra penalty for out-of-range collections as temperature decreases
         if i == solution.below_min_range_idx or i == solution.above_max_range_idx:
-            penalty_factor = 1.0 + ((1.0 - normalized_temperature) * OOR_PENALTY_FACTOR)
-            deviation *= penalty_factor
+            deviation *= OOR_PENALTY_FACTOR
         
         total_cost += deviation
         
@@ -151,15 +169,8 @@ def apply_random_move(solution, normalized_temp):
     # Select a move type based on temperature
     move_types = ["transfer_chunk", "swap_chunks", "split_collection"]
     
-    if normalized_temp > 0.7:
-        probabilities = [0.5, 0.3, 0.2]  # Favor transfers early on
-    elif normalized_temp > 0.3:
-        probabilities = [0.3, 0.5, 0.2]  # Favor swaps in the middle
-    else:
-        probabilities = [0.3, 0.3, 0.4]  # Favor splits later
-    
     # Choose move type
-    move_type = random.choices(move_types, weights=probabilities, k=1)[0]
+    move_type = random.choices(move_types)
     
     global last_move
     last_move = move_type
@@ -182,16 +193,19 @@ def transfer_chunk(solution, overpopulated, underpopulated):
     1. Remove smallest chunks until the collection falls into an underpopulated range
     2. Optimally redistribute removed chunks to collections in underpopulated ranges
     """
-    # Select source range and collection
-    source_range_idx = overpopulated[0][0]
+    # Select source range and collection with a bias towards more overpopulated ranges
+    range_indices = [idx for idx, _ in overpopulated]
+    overpopulation_values = [value ** SELECTION_BIAS for _, value in overpopulated]
+    source_range_idx = random.choices(range_indices, weights=overpopulation_values, k=1)[0]
+    
     source_collections = solution.get_collections_by_size_range(source_range_idx)
     
     if not source_collections:
         return False, None
     
-    # Choose the collection with the most chunks for flexibility
-    source_collections.sort(key=lambda idx: len(solution.get_all_chunks(idx)), reverse=True)
-    source_collection_idx = source_collections[0]
+    # Choose a collection to remove chunks from with a bias towards larger collections
+    collection_weights = [len(solution.get_all_chunks(idx)) ** SELECTION_BIAS for idx in source_collections]
+    source_collection_idx = random.choices(source_collections, weights=collection_weights, k=1)[0]
     
     # Get chunks sorted by size (smallest first)
     source_chunks = solution.get_chunks_by_size_order(source_collection_idx)
@@ -318,9 +332,14 @@ def swap_chunks(solution, overpopulated, underpopulated):
     2. If overpopulated range is larger: swap large chunks with small
     3. Only confirm swap if it moves at least one collection to a better range
     """
-    # Get most overpopulated and underpopulated ranges
-    over_range_idx = overpopulated[0][0]
-    under_range_idx = underpopulated[0][0]
+    # Select ranges using weighted random selection based on deviation values
+    over_range_indices = [idx for idx, _ in overpopulated]
+    over_values = [value ** SELECTION_BIAS for _, value in overpopulated]
+    over_range_idx = random.choices(over_range_indices, weights=over_values, k=1)[0]
+    
+    under_range_indices = [idx for idx, _ in underpopulated]
+    under_values = [value ** SELECTION_BIAS for _, value in underpopulated]
+    under_range_idx = random.choices(under_range_indices, weights=under_values, k=1)[0]
     
     # Determine if overpopulated range is smaller than underpopulated
     over_min, over_max = solution.size_ranges[over_range_idx]
@@ -334,11 +353,12 @@ def swap_chunks(solution, overpopulated, underpopulated):
     if not over_collections or not under_collections:
         return False, None
     
-    # Choose collections with most chunks for flexibility
-    over_collections.sort(key=lambda idx: len(solution.get_all_chunks(idx)), reverse=True)
-    under_collections.sort(key=lambda idx: len(solution.get_all_chunks(idx)), reverse=True)
-    collection1_idx = over_collections[0]
-    collection2_idx = under_collections[0]
+    # Choose collections with weighted bias towards those with more chunks
+    over_weights = [len(solution.get_all_chunks(idx)) ** SELECTION_BIAS for idx in over_collections]
+    collection1_idx = random.choices(over_collections, weights=over_weights, k=1)[0]
+    
+    under_weights = [len(solution.get_all_chunks(idx)) ** SELECTION_BIAS for idx in under_collections]
+    collection2_idx = random.choices(under_collections, weights=under_weights, k=1)[0]
     
     # Get and sort chunks based on strategy
     chunks1 = solution.get_chunks_by_size_order(collection1_idx)
@@ -420,16 +440,19 @@ def split_collection(solution, overpopulated, underpopulated):
     """
     Split a collection from an overpopulated range to create collections in underpopulated ranges.
     """
-    # Select a larger collection from overpopulated range
-    source_range_idx = overpopulated[0][0]
+    # Select range using weighted random selection based on overpopulation values
+    range_indices = [idx for idx, _ in overpopulated]
+    overpopulation_values = [value ** SELECTION_BIAS for _, value in overpopulated]
+    source_range_idx = random.choices(range_indices, weights=overpopulation_values, k=1)[0]
+    
     source_collections = solution.get_collections_by_size_range(source_range_idx)
     
     if not source_collections:
         return False, None
     
-    # Choose collection with most chunks
-    source_collections.sort(key=lambda idx: len(solution.get_all_chunks(idx)), reverse=True)
-    source_collection_idx = source_collections[0]
+    # Choose collection with weighted bias towards those with more chunks
+    collection_weights = [len(solution.get_all_chunks(idx)) ** SELECTION_BIAS for idx in source_collections]
+    source_collection_idx = random.choices(source_collections, weights=collection_weights, k=1)[0]
     
     # Get all chunks
     chunks = solution.get_all_chunks(source_collection_idx)
