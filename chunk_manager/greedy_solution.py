@@ -193,13 +193,18 @@ def allocate_chunks(solution, sorted_chunks, estimated_collections, size_ranges,
             new_cost = solution.get_total_absolute_deviation()
             
             # Compare costs and decide whether to keep the new collection or not
-            if new_cost < best_cost:
+            if solution.get_collection_range_idx(best_collection_idx) == len(size_ranges) - 1:
+                # If the best collection is already out of range so we keep the new collection
+                final_collection_idx = new_collection_idx
+            elif new_cost < best_cost:
+                # If the new collection is better keep it
                 final_collection_idx = new_collection_idx
             else:
+                # Otherwise, keep the best collection
                 final_collection_idx = best_collection_idx
                 solution.add_chunks_to_collection(final_collection_idx, [current_chunk])
                 solution.remove_collection(new_collection_idx)
-            
+
         # Update allocated collections count and adjust current max range if needed
         collection_range = solution.get_collection_range_idx(final_collection_idx)
         if collection_range >= current_max_range:

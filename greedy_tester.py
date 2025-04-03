@@ -21,10 +21,10 @@ RULEBOOK_PARAMS = {
         "chunk_size_avg": 60,
         "chunk_size_max_deviation": 20,
         "chunk_size_range_factor": 0.6,
-        "collection_ranges_count": 6,
-        "collection_ranges_max_val": 150,
-        "collection_ranges_min_val": 50,
-        "collection_distribution_concentration": 100.0,
+        "collection_ranges_count": 3,
+        "collection_ranges_max_val": 160,
+        "collection_ranges_min_val": 100,
+        "collection_distribution_concentration": 50.0,
         "random_seed": 1234
 }
 
@@ -62,6 +62,19 @@ solution = create_greedy_initial_solution(
     fill_factor=0.75
 )
 
+# from chunk_manager.solution_structure import SolutionStructure
+
+# solution = SolutionStructure(
+#     size_ranges=size_ranges,
+#     target_proportions=target_proportions,
+#     mode=mode
+# )
+
+# for chunk in chunks:
+#     topic, sentiment, word_count = chunk
+#     collection_idx = solution.create_new_collection()
+#     solution.add_chunks_to_collection(collection_idx, [(topic, sentiment, word_count)])
+
 end_time = time.time()
 print(f"Greedy solution created in {end_time - start_time:.2f} seconds.")
 
@@ -71,6 +84,8 @@ if final_chunks != len(chunks):
     print(f"Original chunks: {len(chunks)}, Greedy chunks: {final_chunks}")
 else:
     print("The number of chunks in the GREEDY solution matches the original chunks.")
+    
+solution.visualize_solution()
 
 start_time = time.time()
 print("Optimizing collections with simulated annealing...")
@@ -88,7 +103,7 @@ else:
     print("The number of chunks in the OPTIMIZED solution matches the original chunks.")
     
 final_cost = solution.get_total_absolute_deviation()
-print(f"Final cost of the solution: {final_cost:.2f}")
+print(f"Final cost of the solution: {final_cost:.4f}")
 deviation = solution.get_size_range_deviation()
 for idx, dev in deviation:
     print(f"Range {idx} Deviation: {abs(dev):.2f}")

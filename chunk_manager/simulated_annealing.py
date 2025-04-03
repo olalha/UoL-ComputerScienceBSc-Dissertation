@@ -5,7 +5,7 @@ import copy
 # Global constants for simulated annealing algorithm
 INITIAL_TEMPERATURE = 100.0
 COOLING_RATE = 0.99
-MAX_ITERATIONS = 500000
+MAX_ITERATIONS = 10000
 
 # Penalty factor for out-of-range collections
 #   Factor to apply to the deviation of collections 
@@ -76,8 +76,6 @@ def optimize_collections_with_simulated_annealing(initial_solution, max_iteratio
             iteration += 1
             continue
         
-        print(f"Iteration {iteration}: Move applied: {move_info['type']}")
-        
         # Calculate new cost
         new_cost = calculate_cost(current_solution, temperature/initial_temperature)
         
@@ -95,8 +93,6 @@ def optimize_collections_with_simulated_annealing(initial_solution, max_iteratio
                 best_solution = copy.deepcopy(current_solution)
                 best_cost = new_cost
                 no_improvement_count = 0
-                
-                print(f"New best solution found at iteration {iteration} with temp {temperature}: cost = {best_cost}")
                 
             else:
                 no_improvement_count += 1
@@ -140,7 +136,7 @@ def calculate_cost(solution, normalized_temperature):
     for i, (current, target) in enumerate(zip(current_distribution, solution.target_proportions)):
         deviation = abs(current - target)
         
-        # Apply extra penalty for out-of-range collections as temperature decreases
+        # Apply extra penalty for out-of-range collections
         if i == solution.below_min_range_idx or i == solution.above_max_range_idx:
             deviation *= OOR_PENALTY_FACTOR
         
@@ -170,7 +166,7 @@ def apply_random_move(solution, normalized_temp):
     move_types = ["transfer_chunk", "swap_chunks", "split_collection"]
     
     # Choose move type
-    move_type = random.choices(move_types)
+    move_type = random.choices(move_types)[0]
     
     global last_move
     last_move = move_type
@@ -433,7 +429,7 @@ def swap_chunks(solution, overpopulated, underpopulated):
                         return False, None
                     
                     return True, move_info
-                
+    
     return False, None
 
 def split_collection(solution, overpopulated, underpopulated):
