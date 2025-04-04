@@ -18,22 +18,13 @@ OOR_PENALTY_FACTOR = 3.0
 # > 1.0: exponential weighting
 SELECTION_BIAS = 0
 
-""" REMOVE TEMPT TESTING VALUES """
-
-last_number_of_chunks = 0
-last_move = None
-
-def track_size_changes(solution, msg):
-    num = sum(len(solution.get_all_chunks(idx)) for idx in solution.get_active_collection_indices())
-    global last_number_of_chunks
-    if num != last_number_of_chunks:
-        print(f"Size changed from {last_number_of_chunks} to {num} ({msg}) - Move: {last_move}")
-        last_number_of_chunks = num
-
-def optimize_collections_with_simulated_annealing(initial_solution, max_iterations=MAX_ITERATIONS, 
-                                                initial_temperature=INITIAL_TEMPERATURE, 
-                                                cooling_rate=COOLING_RATE,
-                                                callback=None):
+def optimize_collections_with_simulated_annealing(
+    initial_solution, max_iterations=MAX_ITERATIONS, 
+    initial_temperature=INITIAL_TEMPERATURE, 
+    cooling_rate=COOLING_RATE,
+    oor_penalty_factor=OOR_PENALTY_FACTOR,
+    selection_bias=SELECTION_BIAS,
+    callback=None):
     """
     Optimize collection distribution using simulated annealing.
     
@@ -56,7 +47,7 @@ def optimize_collections_with_simulated_annealing(initial_solution, max_iteratio
     last_number_of_chunks = sum(len(current_solution.get_all_chunks(idx)) for idx in current_solution.get_active_collection_indices())
     
     # Calculate initial cost
-    current_cost = calculate_cost(current_solution, 1.0)
+    current_cost = calculate_cost(current_solution, oor_penalty_factor)
     best_cost = current_cost
     
     # Initialize parameters
@@ -69,7 +60,7 @@ def optimize_collections_with_simulated_annealing(initial_solution, max_iteratio
     while iteration < max_iterations and no_improvement_count < max_no_improvement:
         
         # Apply a move to current solution
-        move_applied, move_info = apply_random_move(current_solution, temperature/initial_temperature)
+        move_applied, move_info = apply_random_move(current_solution, selection_bias)
         
         # If no valid move could be applied, try again
         if not move_applied:
@@ -77,7 +68,7 @@ def optimize_collections_with_simulated_annealing(initial_solution, max_iteratio
             continue
         
         # Calculate new cost
-        new_cost = calculate_cost(current_solution, temperature/initial_temperature)
+        new_cost = calculate_cost(current_solution, oor_penalty_factor)
         
         # Decide whether to accept the move
         delta_cost = new_cost - current_cost
@@ -103,23 +94,17 @@ def optimize_collections_with_simulated_annealing(initial_solution, max_iteratio
             
         # Report progress via callback if provided
         if callback:
-            collection_list = [current_solution.get_all_chunks(idx) 
-                              for idx in current_solution.get_active_collection_indices()]
-            callback(iteration, temperature, current_cost, best_cost, collection_list, accepted)
+            num_collections = len(current_solution.get_active_collection_indices())
+            callback(iteration, temperature, current_cost, best_cost, num_collections, accepted)
             
         # Cool the temperature
         if accepted:
             temperature *= cooling_rate
         iteration += 1
     
-    print(f"Simulated annealing completed after {iteration} iterations.")
-    print(f"No improvement count: {no_improvement_count}")
-    print(f"Final temperature: {temperature:.4f}")
-    print(f"Best cost: {best_cost}")
-    
     return best_solution
 
-def calculate_cost(solution, normalized_temperature):
+def calculate_cost(solution, oor_penalty_factor):
     """
     Calculate the cost function based on deviation from target proportions.
     
@@ -137,14 +122,16 @@ def calculate_cost(solution, normalized_temperature):
         deviation = abs(current - target)
         
         # Apply extra penalty for out-of-range collections
-        if i == solution.below_min_range_idx or i == solution.above_max_range_idx:
-            deviation *= OOR_PENALTY_FACTOR
+        if i == solution.below_min_range_idx:
+            deviation *= oor_penalty_factor
+        if i == solution.above_max_range_idx:
+            deviation *= oor_penalty_factor
         
         total_cost += deviation
         
     return total_cost
 
-def apply_random_move(solution, normalized_temp):
+def apply_random_move(solution, selection_bias):
     """
     Apply a random move to the solution.
     
@@ -168,20 +155,17 @@ def apply_random_move(solution, normalized_temp):
     # Choose move type
     move_type = random.choices(move_types)[0]
     
-    global last_move
-    last_move = move_type
-    
     # Apply the selected move
     if move_type == "transfer_chunk":
-        return_val = transfer_chunk(solution, overpopulated, underpopulated)
+        return_val = transfer_chunk(solution, overpopulated, underpopulated, selection_bias)
     elif move_type == "swap_chunks":
-        return_val = swap_chunks(solution, overpopulated, underpopulated)
+        return_val = swap_chunks(solution, overpopulated, underpopulated, selection_bias)
     else:
-        return_val = split_collection(solution, overpopulated, underpopulated)
+        return_val = split_collection(solution, overpopulated, underpopulated, selection_bias)
     
     return return_val
         
-def transfer_chunk(solution, overpopulated, underpopulated):
+def transfer_chunk(solution, overpopulated, underpopulated, selection_bias):
     """
     Transfer chunks from a collection in an overpopulated range to move it to an underpopulated range.
     
@@ -191,7 +175,7 @@ def transfer_chunk(solution, overpopulated, underpopulated):
     """
     # Select source range and collection with a bias towards more overpopulated ranges
     range_indices = [idx for idx, _ in overpopulated]
-    overpopulation_values = [value ** SELECTION_BIAS for _, value in overpopulated]
+    overpopulation_values = [value ** selection_bias for _, value in overpopulated]
     source_range_idx = random.choices(range_indices, weights=overpopulation_values, k=1)[0]
     
     source_collections = solution.get_collections_by_size_range(source_range_idx)
@@ -200,7 +184,7 @@ def transfer_chunk(solution, overpopulated, underpopulated):
         return False, None
     
     # Choose a collection to remove chunks from with a bias towards larger collections
-    collection_weights = [len(solution.get_all_chunks(idx)) ** SELECTION_BIAS for idx in source_collections]
+    collection_weights = [len(solution.get_all_chunks(idx)) ** selection_bias for idx in source_collections]
     source_collection_idx = random.choices(source_collections, weights=collection_weights, k=1)[0]
     
     # Get chunks sorted by size (smallest first)
@@ -319,7 +303,7 @@ def transfer_chunk(solution, overpopulated, underpopulated):
     move_info["new_collections"] = new_collections
     return True, move_info
 
-def swap_chunks(solution, overpopulated, underpopulated):
+def swap_chunks(solution, overpopulated, underpopulated, selection_bias):
     """
     Swap chunks between collections to move them toward target ranges.
     
@@ -330,11 +314,11 @@ def swap_chunks(solution, overpopulated, underpopulated):
     """
     # Select ranges using weighted random selection based on deviation values
     over_range_indices = [idx for idx, _ in overpopulated]
-    over_values = [value ** SELECTION_BIAS for _, value in overpopulated]
+    over_values = [value ** selection_bias for _, value in overpopulated]
     over_range_idx = random.choices(over_range_indices, weights=over_values, k=1)[0]
     
     under_range_indices = [idx for idx, _ in underpopulated]
-    under_values = [value ** SELECTION_BIAS for _, value in underpopulated]
+    under_values = [value ** selection_bias for _, value in underpopulated]
     under_range_idx = random.choices(under_range_indices, weights=under_values, k=1)[0]
     
     # Determine if overpopulated range is smaller than underpopulated
@@ -350,10 +334,10 @@ def swap_chunks(solution, overpopulated, underpopulated):
         return False, None
     
     # Choose collections with weighted bias towards those with more chunks
-    over_weights = [len(solution.get_all_chunks(idx)) ** SELECTION_BIAS for idx in over_collections]
+    over_weights = [len(solution.get_all_chunks(idx)) ** selection_bias for idx in over_collections]
     collection1_idx = random.choices(over_collections, weights=over_weights, k=1)[0]
     
-    under_weights = [len(solution.get_all_chunks(idx)) ** SELECTION_BIAS for idx in under_collections]
+    under_weights = [len(solution.get_all_chunks(idx)) ** selection_bias for idx in under_collections]
     collection2_idx = random.choices(under_collections, weights=under_weights, k=1)[0]
     
     # Get and sort chunks based on strategy
@@ -432,13 +416,13 @@ def swap_chunks(solution, overpopulated, underpopulated):
     
     return False, None
 
-def split_collection(solution, overpopulated, underpopulated):
+def split_collection(solution, overpopulated, underpopulated, selection_bias):
     """
     Split a collection from an overpopulated range to create collections in underpopulated ranges.
     """
     # Select range using weighted random selection based on overpopulation values
     range_indices = [idx for idx, _ in overpopulated]
-    overpopulation_values = [value ** SELECTION_BIAS for _, value in overpopulated]
+    overpopulation_values = [value ** selection_bias for _, value in overpopulated]
     source_range_idx = random.choices(range_indices, weights=overpopulation_values, k=1)[0]
     
     source_collections = solution.get_collections_by_size_range(source_range_idx)
@@ -447,7 +431,7 @@ def split_collection(solution, overpopulated, underpopulated):
         return False, None
     
     # Choose collection with weighted bias towards those with more chunks
-    collection_weights = [len(solution.get_all_chunks(idx)) ** SELECTION_BIAS for idx in source_collections]
+    collection_weights = [len(solution.get_all_chunks(idx)) ** selection_bias for idx in source_collections]
     source_collection_idx = random.choices(source_collections, weights=collection_weights, k=1)[0]
     
     # Get all chunks

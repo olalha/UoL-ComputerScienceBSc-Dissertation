@@ -8,9 +8,9 @@ from chunk_manager.simulated_annealing import optimize_collections_with_simulate
 
 # Rulebook generation parameters
 RULEBOOK_PARAMS = {
-        "mode": "word",
+        "mode": "chunk",
         "content_title": "EVAL - RULEBOOK 1",
-        "total": 30000,
+        "total": 1000,
         "topics": [
             "Quality", "Price", "Design", "Performance", "Support",
             "Reliability", "Innovation", "Ergonomics", "Value", "Features",
@@ -21,9 +21,9 @@ RULEBOOK_PARAMS = {
         "chunk_size_avg": 60,
         "chunk_size_max_deviation": 20,
         "chunk_size_range_factor": 0.6,
-        "collection_ranges_count": 10,
-        "collection_ranges_max_val": 160,
-        "collection_ranges_min_val": 100,
+        "collection_ranges_count": 4,
+        "collection_ranges_max_val": 8,
+        "collection_ranges_min_val": 4,
         "collection_distribution_concentration": 50.0,
         "random_seed": 1234
 }
@@ -54,26 +54,26 @@ chunks = chunks_tuples
 import time
 start_time = time.time()
 
-# solution = create_greedy_initial_solution(
-#     chunks=chunks,
-#     size_ranges=size_ranges, 
-#     target_proportions=target_proportions, 
-#     mode=mode, 
-#     fill_factor=0.75
-# )
-
-from chunk_manager.solution_structure import SolutionStructure
-
-solution = SolutionStructure(
-    size_ranges=size_ranges,
-    target_proportions=target_proportions,
-    mode=mode
+solution = create_greedy_initial_solution(
+    chunks=chunks,
+    size_ranges=size_ranges, 
+    target_proportions=target_proportions, 
+    mode=mode, 
+    fill_factor=0.75
 )
 
-for chunk in chunks:
-    topic, sentiment, word_count = chunk
-    collection_idx = solution.create_new_collection()
-    solution.add_chunks_to_collection(collection_idx, [(topic, sentiment, word_count)])
+# from chunk_manager.solution_structure import SolutionStructure
+
+# solution = SolutionStructure(
+#     size_ranges=size_ranges,
+#     target_proportions=target_proportions,
+#     mode=mode
+# )
+
+# for chunk in chunks:
+#     topic, sentiment, word_count = chunk
+#     collection_idx = solution.create_new_collection()
+#     solution.add_chunks_to_collection(collection_idx, [(topic, sentiment, word_count)])
 
 end_time = time.time()
 print(f"Greedy solution created in {end_time - start_time:.2f} seconds.")
