@@ -38,13 +38,13 @@ from chunk_manager.simulated_annealing import optimize_collections_with_simulate
 
 # Experiment configurations to test
 INITIAL_SOLUTION_METHODS = ["simple", "greedy"]
-COOLING_RATES = [0.9, 0.95, 0.99]
-NUM_OF_ITERATIONS = [1000, 2000, 10000]
-OOR_PENALTY_FACTOR = [0.0, 1.0, 3.0]
-SELECTION_BIAS = [0.0, 1.0, 3.0]
+COOLING_RATES = [0.9, 0.95, 0.99, 0.999]
+NUM_OF_ITERATIONS = [2000, 5000, 10000]
+OOR_PENALTY_FACTOR = [0.0, 2.0, 4.0]
+SELECTION_BIAS = [1.0, 2.0, 4.0]
 
 # Test run parameters
-NUM_RUNS_PER_CONFIG = 2  # Number of times to run each configuration
+NUM_RUNS_PER_CONFIG = 5  # Number of times to run each configuration
 RECORD_ITERATION_INTERVAL = 10  # Record data every N iterations
 
 # Multiprocessing settings
@@ -54,7 +54,7 @@ MAX_WORKERS = max(1, mp.cpu_count() - 1)  # Use all but one CPU core
 # Rulebook generation parameters
 RULEBOOK_PARAMS = [
     {
-    "mode": "chunk",
+    "mode": "word",
     "content_title": "EVAL - RULEBOOK 1",
     "total": 30000,
     "topics": [
@@ -68,15 +68,15 @@ RULEBOOK_PARAMS = [
     "chunk_size_max_deviation": 20,
     "chunk_size_range_factor": 0.6,
     "collection_ranges_count": 4,
-    "collection_ranges_max_val": 120,
-    "collection_ranges_min_val": 160,
+    "collection_ranges_min_val": 120,
+    "collection_ranges_max_val": 200,
     "collection_distribution_concentration": 50.0,
     "random_seed": 1234
     }
 ]
 
 # Visualization options
-CREATE_VISUALIZATIONS = True
+CREATE_VISUALIZATIONS = False
 VISUALIZATION_FORMATS = ['png']  # Options: 'png', 'svg', 'pdf'
 PLOT_DPI = 300
 
@@ -198,6 +198,47 @@ def evaluate_single_run(config: Dict[str, Any],
             'error': f"Exception in chunk generation: {str(e)}"
         }
     
+    # Convert chunks from list of dicts to list of tuples
+    chunk_tuples = []
+    for chunk in chunks:
+        topic = chunk['topic']
+        sentiment = chunk['sentiment']
+        word_count = chunk['wc']
+        chunk_tuples.append((topic, sentiment, word_count))
+    
+    # Create initial solution based on the selected method    
+    try:
+        if initial_solution == 'simple':
+            # Simple initial solution - create a collection for each chunk
+            solution = SolutionStructure(
+                size_ranges=size_ranges,
+                target_proportions=target_proportions,
+                mode=rulebook['collection_mode']
+            )
+            for chunk in chunk_tuples:
+                collection_idx = solution.create_new_collection()
+                solution.add_chunks_to_collection(collection_idx, [chunk])
+        
+        elif initial_solution == 'greedy':
+            # Greedy initial solution - use the greedy algorithm to create collections
+            solution = create_greedy_initial_solution(
+                chunks=chunk_tuples,
+                size_ranges=size_ranges, 
+                target_proportions=target_proportions, 
+                mode=rulebook['collection_mode'], 
+                fill_factor=0.75
+            )
+        else:
+            raise ValueError(f"Unknown initial solution method: {initial_solution}")
+    except Exception as e:
+        return {
+            'config': config,
+            'rulebook_title': rulebook['content_title'],
+            'run_index': run_index,
+            'success': False,
+            'error': f"Exception in chunk generation: {str(e)}"
+        }
+    
     # Set hooks to collect intermediate data
     accepted_moves = 0
     rejected_moves = 0
@@ -221,41 +262,6 @@ def evaluate_single_run(config: Dict[str, Any],
                 'best_cost': best_cost,
                 'num_collections': num_collections
             })
-    
-    # Create initial solution based on the selected method    
-    try:
-        if initial_solution == 'simple':
-            # Simple initial solution - create a collection for each chunk
-            solution = SolutionStructure(
-                size_ranges=size_ranges,
-                target_proportions=target_proportions,
-                mode=rulebook['collection_mode']
-            )
-            for chunk in chunks:
-                topic = chunk['topic']
-                sentiment = chunk['sentiment']
-                word_count = chunk['wc']
-                collection_idx = solution.create_new_collection()
-                solution.add_chunks_to_collection(collection_idx, [(topic, sentiment, word_count)])
-        elif initial_solution == 'greedy':
-            # Greedy initial solution - use the greedy algorithm to create collections
-            solution = create_greedy_initial_solution(
-                chunks=chunks,
-                size_ranges=size_ranges, 
-                target_proportions=target_proportions, 
-                mode=rulebook['collection_mode'], 
-                fill_factor=0.75
-            )
-        else:
-            raise ValueError(f"Unknown initial solution method: {initial_solution}")
-    except Exception as e:
-        return {
-            'config': config,
-            'rulebook_title': rulebook['content_title'],
-            'run_index': run_index,
-            'success': False,
-            'error': f"Exception in chunk generation: {str(e)}"
-        }
     
     # Run the aggregation algorithm
     try:
@@ -580,7 +586,7 @@ def export_results(summary_df: pd.DataFrame,
                 compact = {"config_str": get_configuration_name(result['config'])}
                     
                 # Create a copy without the iteration structure
-                compact.update({k: v for k, v in result.items() if k != 'iterations_data'})
+                compact.update({k: v for k, v in result.items() if k != 'iterations_data' and k != 'solution'})
                 compact_results.append(compact)
                 
             json_path = os.path.join(output_path, "evaluation_results.json")

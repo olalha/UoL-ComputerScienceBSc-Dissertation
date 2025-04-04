@@ -97,9 +97,8 @@ def optimize_collections_with_simulated_annealing(
             num_collections = len(current_solution.get_active_collection_indices())
             callback(iteration, temperature, current_cost, best_cost, num_collections, accepted)
             
-        # Cool the temperature
-        if accepted:
-            temperature *= cooling_rate
+        # Prepare for next iteration
+        temperature *= cooling_rate
         iteration += 1
     
     return best_solution
@@ -175,7 +174,7 @@ def transfer_chunk(solution, overpopulated, underpopulated, selection_bias):
     """
     # Select source range and collection with a bias towards more overpopulated ranges
     range_indices = [idx for idx, _ in overpopulated]
-    overpopulation_values = [value ** selection_bias for _, value in overpopulated]
+    overpopulation_values = [abs(value * selection_bias) for _, value in overpopulated]
     source_range_idx = random.choices(range_indices, weights=overpopulation_values, k=1)[0]
     
     source_collections = solution.get_collections_by_size_range(source_range_idx)
@@ -184,7 +183,7 @@ def transfer_chunk(solution, overpopulated, underpopulated, selection_bias):
         return False, None
     
     # Choose a collection to remove chunks from with a bias towards larger collections
-    collection_weights = [len(solution.get_all_chunks(idx)) ** selection_bias for idx in source_collections]
+    collection_weights = [len(solution.get_all_chunks(idx)) * selection_bias for idx in source_collections]
     source_collection_idx = random.choices(source_collections, weights=collection_weights, k=1)[0]
     
     # Get chunks sorted by size (smallest first)
@@ -314,11 +313,11 @@ def swap_chunks(solution, overpopulated, underpopulated, selection_bias):
     """
     # Select ranges using weighted random selection based on deviation values
     over_range_indices = [idx for idx, _ in overpopulated]
-    over_values = [value ** selection_bias for _, value in overpopulated]
+    over_values = [abs(value * selection_bias) for _, value in overpopulated]
     over_range_idx = random.choices(over_range_indices, weights=over_values, k=1)[0]
     
     under_range_indices = [idx for idx, _ in underpopulated]
-    under_values = [value ** selection_bias for _, value in underpopulated]
+    under_values = [abs(value * selection_bias) for _, value in underpopulated]
     under_range_idx = random.choices(under_range_indices, weights=under_values, k=1)[0]
     
     # Determine if overpopulated range is smaller than underpopulated
@@ -334,10 +333,10 @@ def swap_chunks(solution, overpopulated, underpopulated, selection_bias):
         return False, None
     
     # Choose collections with weighted bias towards those with more chunks
-    over_weights = [len(solution.get_all_chunks(idx)) ** selection_bias for idx in over_collections]
+    over_weights = [len(solution.get_all_chunks(idx)) * selection_bias for idx in over_collections]
     collection1_idx = random.choices(over_collections, weights=over_weights, k=1)[0]
     
-    under_weights = [len(solution.get_all_chunks(idx)) ** selection_bias for idx in under_collections]
+    under_weights = [len(solution.get_all_chunks(idx)) * selection_bias for idx in under_collections]
     collection2_idx = random.choices(under_collections, weights=under_weights, k=1)[0]
     
     # Get and sort chunks based on strategy
@@ -422,7 +421,7 @@ def split_collection(solution, overpopulated, underpopulated, selection_bias):
     """
     # Select range using weighted random selection based on overpopulation values
     range_indices = [idx for idx, _ in overpopulated]
-    overpopulation_values = [value ** selection_bias for _, value in overpopulated]
+    overpopulation_values = [abs(value * selection_bias) for _, value in overpopulated]
     source_range_idx = random.choices(range_indices, weights=overpopulation_values, k=1)[0]
     
     source_collections = solution.get_collections_by_size_range(source_range_idx)
@@ -431,7 +430,7 @@ def split_collection(solution, overpopulated, underpopulated, selection_bias):
         return False, None
     
     # Choose collection with weighted bias towards those with more chunks
-    collection_weights = [len(solution.get_all_chunks(idx)) ** selection_bias for idx in source_collections]
+    collection_weights = [len(solution.get_all_chunks(idx)) * selection_bias for idx in source_collections]
     source_collection_idx = random.choices(source_collections, weights=collection_weights, k=1)[0]
     
     # Get all chunks
