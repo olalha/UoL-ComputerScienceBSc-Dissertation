@@ -22,3 +22,6 @@ _testing/
 
 # Ignore evaluation results
 _eval_results/
+
+# Ignore plot generation
+_plots/

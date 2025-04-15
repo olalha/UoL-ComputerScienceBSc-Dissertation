@@ -13,10 +13,10 @@ MAX_ITERATIONS = 10000
 OOR_PENALTY_FACTOR = 3.0
 
 # Selection bias for chunk selection
-# = 0.0: linear selection
+# = 0.0: uniform selection
 # = 1.0: linear weighting
 # > 1.0: exponential weighting
-SELECTION_BIAS = 0
+SELECTION_BIAS = 0.0
 
 def optimize_collections_with_simulated_annealing(
     initial_solution, max_iterations=MAX_ITERATIONS, 
@@ -38,13 +38,21 @@ def optimize_collections_with_simulated_annealing(
     Returns:
         Optimized solution structure
     """
+    valid_params = check_simulated_annealing_params(
+        initial_solution,
+        max_iterations,
+        initial_temperature,
+        cooling_rate,
+        oor_penalty_factor,
+        selection_bias,
+        callback
+    )
+    if not valid_params:
+        return None
+    
     # Make a copy of the initial solution
     current_solution = copy.deepcopy(initial_solution)
     best_solution = copy.deepcopy(current_solution)
-    
-    """ TEMP """
-    global last_number_of_chunks
-    last_number_of_chunks = sum(len(current_solution.get_all_chunks(idx)) for idx in current_solution.get_active_collection_indices())
     
     # Calculate initial cost
     current_cost = calculate_cost(current_solution, oor_penalty_factor)
@@ -174,7 +182,7 @@ def transfer_chunk(solution, overpopulated, underpopulated, selection_bias):
     """
     # Select source range and collection with a bias towards more overpopulated ranges
     range_indices = [idx for idx, _ in overpopulated]
-    overpopulation_values = [abs(value * selection_bias) for _, value in overpopulated]
+    overpopulation_values = [value ** selection_bias for _, value in overpopulated]
     source_range_idx = random.choices(range_indices, weights=overpopulation_values, k=1)[0]
     
     source_collections = solution.get_collections_by_size_range(source_range_idx)
@@ -183,7 +191,7 @@ def transfer_chunk(solution, overpopulated, underpopulated, selection_bias):
         return False, None
     
     # Choose a collection to remove chunks from with a bias towards larger collections
-    collection_weights = [len(solution.get_all_chunks(idx)) * selection_bias for idx in source_collections]
+    collection_weights = [len(solution.get_all_chunks(idx)) ** selection_bias for idx in source_collections]
     source_collection_idx = random.choices(source_collections, weights=collection_weights, k=1)[0]
     
     # Get chunks sorted by size (smallest first)
@@ -313,11 +321,11 @@ def swap_chunks(solution, overpopulated, underpopulated, selection_bias):
     """
     # Select ranges using weighted random selection based on deviation values
     over_range_indices = [idx for idx, _ in overpopulated]
-    over_values = [abs(value * selection_bias) for _, value in overpopulated]
+    over_values = [value ** selection_bias for _, value in overpopulated]
     over_range_idx = random.choices(over_range_indices, weights=over_values, k=1)[0]
     
     under_range_indices = [idx for idx, _ in underpopulated]
-    under_values = [abs(value * selection_bias) for _, value in underpopulated]
+    under_values = [value ** selection_bias for _, value in underpopulated]
     under_range_idx = random.choices(under_range_indices, weights=under_values, k=1)[0]
     
     # Determine if overpopulated range is smaller than underpopulated
@@ -333,10 +341,10 @@ def swap_chunks(solution, overpopulated, underpopulated, selection_bias):
         return False, None
     
     # Choose collections with weighted bias towards those with more chunks
-    over_weights = [len(solution.get_all_chunks(idx)) * selection_bias for idx in over_collections]
+    over_weights = [len(solution.get_all_chunks(idx)) ** selection_bias for idx in over_collections]
     collection1_idx = random.choices(over_collections, weights=over_weights, k=1)[0]
     
-    under_weights = [len(solution.get_all_chunks(idx)) * selection_bias for idx in under_collections]
+    under_weights = [len(solution.get_all_chunks(idx)) ** selection_bias for idx in under_collections]
     collection2_idx = random.choices(under_collections, weights=under_weights, k=1)[0]
     
     # Get and sort chunks based on strategy
@@ -421,7 +429,7 @@ def split_collection(solution, overpopulated, underpopulated, selection_bias):
     """
     # Select range using weighted random selection based on overpopulation values
     range_indices = [idx for idx, _ in overpopulated]
-    overpopulation_values = [abs(value * selection_bias) for _, value in overpopulated]
+    overpopulation_values = [value ** selection_bias for _, value in overpopulated]
     source_range_idx = random.choices(range_indices, weights=overpopulation_values, k=1)[0]
     
     source_collections = solution.get_collections_by_size_range(source_range_idx)
@@ -430,7 +438,7 @@ def split_collection(solution, overpopulated, underpopulated, selection_bias):
         return False, None
     
     # Choose collection with weighted bias towards those with more chunks
-    collection_weights = [len(solution.get_all_chunks(idx)) * selection_bias for idx in source_collections]
+    collection_weights = [len(solution.get_all_chunks(idx)) ** selection_bias for idx in source_collections]
     source_collection_idx = random.choices(source_collections, weights=collection_weights, k=1)[0]
     
     # Get all chunks
@@ -605,3 +613,38 @@ def revert_move(solution, move_info):
         
         # Remove the new collection
         solution.remove_collection(new_collection_idx)
+
+def check_simulated_annealing_params(
+    initial_solution,
+    max_iterations,
+    initial_temperature,
+    cooling_rate,
+    oor_penalty_factor,
+    selection_bias,
+    callback):
+    """
+    Validate parameters for simulated annealing optimization.
+    Prints error and returns False if any parameter is invalid, otherwise returns True.
+    """
+    if initial_solution is None:
+        print("optimize_collections_with_simulated_annealing: initial_solution must not be None.")
+        return False
+    if not isinstance(max_iterations, int) or max_iterations <= 0:
+        print("optimize_collections_with_simulated_annealing: max_iterations must be a positive integer.")
+        return False
+    if not isinstance(initial_temperature, (int, float)) or initial_temperature <= 0:
+        print("optimize_collections_with_simulated_annealing: initial_temperature must be a positive number.")
+        return False
+    if not isinstance(cooling_rate, (int, float)) or not (0 < cooling_rate < 1):
+        print("optimize_collections_with_simulated_annealing: cooling_rate must be a float between 0 and 1 (exclusive).")
+        return False
+    if not isinstance(oor_penalty_factor, (int, float)) or oor_penalty_factor < 0:
+        print("optimize_collections_with_simulated_annealing: oor_penalty_factor must be a non-negative number.")
+        return False
+    if not isinstance(selection_bias, (int, float)) or selection_bias < 0:
+        print("optimize_collections_with_simulated_annealing: selection_bias must be a non-negative number.")
+        return False
+    if callback is not None and not callable(callback):
+        print("optimize_collections_with_simulated_annealing: callback must be a callable or None.")
+        return False
+    return True

@@ -20,6 +20,9 @@ def create_greedy_initial_solution(chunks, size_ranges, target_proportions, mode
     Returns:
         SolutionStructure: Initial solution structure with allocated chunks
     """
+    valid_params = check_greedy_solution_params(chunks, size_ranges, target_proportions, mode, fill_factor)
+    if not valid_params:
+        return None
     
     # Sort size ranges to ensure they are in ascending order
     size_ranges = sorted(size_ranges, key=lambda x: x[0])
@@ -268,3 +271,47 @@ def next_valid_range(allocated_collections, estimated_collections, current_max_r
         if allocated_collections[range_idx] < estimated_collections[range_idx]:
             return range_idx
     return -1  # No more valid ranges
+
+def check_greedy_solution_params(chunks, size_ranges, target_proportions, mode, fill_factor):
+    """
+    Validates the parameters for create_greedy_initial_solution.
+
+    Returns:
+        bool: True if all parameters are valid, False otherwise.
+    """
+    # Check chunks
+    if not isinstance(chunks, list) or not all(isinstance(chunk, tuple) and len(chunk) == 3 for chunk in chunks):
+        print("create_greedy_initial_solution: 'chunks' must be a list of (topic, sentiment, word_count) tuples.")
+        return False
+
+    # Check size_ranges
+    if not isinstance(size_ranges, list) or not all(isinstance(r, (list, tuple)) and len(r) == 2 for r in size_ranges):
+        print("create_greedy_initial_solution: 'size_ranges' must be a list of [min_size, max_size] pairs.")
+        return False
+    for r in size_ranges:
+        if not (isinstance(r[0], (int, float)) and isinstance(r[1], (int, float)) and r[0] <= r[1]):
+            print("create_greedy_initial_solution: Each size range must be [min_size, max_size] with min_size <= max_size.")
+            return False
+
+    # Check target_proportions
+    if not isinstance(target_proportions, list) or len(target_proportions) != len(size_ranges):
+        print("create_greedy_initial_solution: 'target_proportions' must be a list with the same length as 'size_ranges'.")
+        return False
+    if not all(isinstance(p, (int, float)) and 0 <= p <= 1 for p in target_proportions):
+        print("create_greedy_initial_solution: All target proportions must be numbers between 0 and 1.")
+        return False
+    if abs(sum(target_proportions) - 1.0) > 1e-6:
+        print("create_greedy_initial_solution: The sum of target proportions must be 1.")
+        return False
+
+    # Check mode
+    if mode not in ("word", "chunk"):
+        print("create_greedy_initial_solution: 'mode' must be either 'word' or 'chunk'.")
+        return False
+
+    # Check fill_factor
+    if not isinstance(fill_factor, (int, float)) or not (0 <= fill_factor <= 1):
+        print("create_greedy_initial_solution: 'fill_factor' must be a float between 0 and 1.")
+        return False
+
+    return True
