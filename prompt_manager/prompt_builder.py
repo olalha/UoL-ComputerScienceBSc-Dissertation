@@ -20,10 +20,7 @@ def render_prompt(template_name: str, context: dict = None) -> Optional[str]:
         context (dict, optional): A dictionary of variables to pass to the template. Defaults to None.
 
     Returns:
-        str: The rendered template as a string.
-
-    Raises:
-        RuntimeError: If there's an issue rendering the template.
+        str: The rendered template as a string or None.
     """
     try:
         # Render the template
