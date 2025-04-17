@@ -56,6 +56,7 @@ def create_dataset_structure(
         fill_factor=FILL_FACTOR
     )
     
+    # Check if initial solution was created successfully
     if not initial_solution:
         print("create_dataset_structure: Failed to create initial solution.")
         return None
