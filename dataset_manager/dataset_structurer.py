@@ -1,16 +1,16 @@
 from typing import Optional
 
-from chunk_manager.chunk_partitioner import get_chunks
-from chunk_manager.chunk_aggregator import aggregate_chunks
+from utils.settings_manager import get_setting
 from chunk_manager.rulebook_parser import validate_rulebook_values
+from chunk_manager.chunk_partitioner import get_chunks
+from chunk_manager.greedy_solution import create_greedy_initial_solution
+from chunk_manager.simulated_annealing import optimize_collections_with_simulated_annealing
+
+FILL_FACTOR = get_setting('GREEDY_SOLUTION', 'fill_factor')
 
 def create_dataset_structure(
     rulebook: dict, 
-    solution_search_time_s: int, 
-    initial_solution_fn: str = "simple", 
-    cost_function: str = "simple", 
-    move_selector: str = "static",
-    cooling_rate: float = 0.995 ) -> Optional[dict]:
+    max_iterations: int) -> Optional[dict]:
     """
     Creates a structured dataset from a rulebook.
 
@@ -20,12 +20,7 @@ def create_dataset_structure(
 
     Args:
         rulebook (dict): The rulebook containing dataset parameters and constraints.
-        solution_search_time_s (int): Maximum time in seconds to search for a solution
-                                     when allocating chunks to collections.
-        initial_solution_fn (str): Initial solution method ("simple" or "greedy").
-        cost_function (str): Cost function to use ("simple" or "enhanced").
-        move_selector (str): Move probability method ("static" or "adaptive").
-        cooling_rate (float): Cooling rate for simulated annealing (0.950-0.999).
+        max_iterations (int): The maximum number of iterations for the optimization algorithm.
 
     Returns:
         Optional[dict]: Dataset structure on success, or None if an error occurred.
@@ -44,43 +39,46 @@ def create_dataset_structure(
         print("create_dataset_structure: Failed to partition chunks.")
         return None
     
-    # Find best allocation of chunks to collections
-    collection_ranges = rulebook['collection_ranges']
-    collection_mode = rulebook['collection_mode']
-    solution = aggregate_chunks(
-        chunks=all_chunks_dicts, 
-        size_ranges=collection_ranges,
-        collection_mode=collection_mode, 
-        time_limit=solution_search_time_s,
-        initial_solution_fn=initial_solution_fn,
-        cost_function=cost_function,
-        move_selector=move_selector,
-        cooling_rate=cooling_rate
+    # Convert chunk dictionaries to tuples for more efficient processing
+    all_chunks_tuples = [tuple(chunk_dict.values()) for chunk_dict in all_chunks_dicts]
+    
+    # Obtain collection ranges and mode from rulebook
+    mode = rulebook['collection_mode']
+    size_ranges = [i['range'] for i in rulebook['collection_ranges']]
+    target_proportions = [i['target_fraction'] for i in rulebook['collection_ranges']]
+    
+    # Generate the greedy initial solution
+    initial_solution = create_greedy_initial_solution(
+        chunks=all_chunks_tuples, 
+        size_ranges=size_ranges, 
+        target_proportions=target_proportions,
+        mode=mode,
+        fill_factor=FILL_FACTOR
+    )
+    
+    if not initial_solution:
+        print("create_dataset_structure: Failed to create initial solution.")
+        return None
+    
+    # Perform simulated annealing to optimize the solution
+    optimized_solution = optimize_collections_with_simulated_annealing(
+        initial_solution=initial_solution,
+        max_iterations=max_iterations,
     )
     
     # Check if a solution was found
-    if not solution:
+    if not optimized_solution:
         print("create_dataset_structure: Failed to allocate chunks to collections.")
         return None
     
-    # TEMP - COST CHECK
-    from chunk_manager.chunk_aggregator import compute_cost_enhanced, compute_total_wc
-    
-    # Calculate the cost and print
-    collection_mode = rulebook['collection_mode']
-    if collection_mode == "word":
-        value_extractor = compute_total_wc
-    elif collection_mode == "chunk":
-        value_extractor = lambda collection: len(collection)
-    cost = compute_cost_enhanced(solution, rulebook['collection_ranges'], value_extractor)
-    print(f"{rulebook['content_title']} - Dataset Final Solution Cost: {cost}")
-    
-    
     # Prepare dataset structure
     collections = []
-    for item in solution:
+    for idx in optimized_solution.get_active_collection_indices():
+        collection_chunks = optimized_solution.get_all_chunks(idx)
         collection = {'chunks': [], 'collection_text': None}
-        for chunk_dict in item['chunks']:
+        for chunk_tuple in collection_chunks:
+            topic, sentiment, wc = chunk_tuple[0], chunk_tuple[1], chunk_tuple[2]
+            chunk_dict = {'topic': topic, 'sentiment': sentiment, 'wc': wc}
             collection['chunks'].append({'chunk_dict': chunk_dict, 'chunk_text': None})
         collections.append(collection)
         

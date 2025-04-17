@@ -79,7 +79,7 @@ def estimate_collection_counts(chunks, size_ranges, target_proportions, mode, fi
     total_number_of_collection_estimate = 0
     for i, (min_size, max_size) in enumerate(size_ranges):
         # Estimate average size of collections in this range using fill_factor
-        estimated_size = min_size + fill_factor * (max_size - min_size)
+        estimated_size = max(1, min_size + fill_factor * (max_size - min_size))
         # Calculate size budget based on target proportion
         size_budget = target_proportions[i] * total_size
         # Calculate number of collections needed
@@ -279,9 +279,10 @@ def check_greedy_solution_params(chunks, size_ranges, target_proportions, mode, 
     Returns:
         bool: True if all parameters are valid, False otherwise.
     """
+    
     # Check chunks
     if not isinstance(chunks, list) or not all(isinstance(chunk, tuple) and len(chunk) == 3 for chunk in chunks):
-        print("create_greedy_initial_solution: 'chunks' must be a list of (topic, sentiment, word_count) tuples.")
+        print("create_greedy_initial_solution: 'chunks' must be a list of (topic, sentiment, wc) tuples.")
         return False
 
     # Check size_ranges

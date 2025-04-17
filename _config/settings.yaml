@@ -23,15 +23,24 @@ CHUNK_COUNT_MAPPING:
   Mean_Number: 0.50
   High_Number: 0.70
   Highest_Number: 0.85
-
 CHUNK_SIZE_MAPPING:
   Very_Small: 0.10
   Small: 0.25
   Medium: 0.50
   Large: 0.75
   Very_Large: 0.90
-
 CHUNK_VAR_MAPPING:
   Low_Variation: 10.0
   Average_Variation: 5.0
   High_Variation: 1.0
+
+# Collection forming settings
+SIMULATED_ANNEALING:
+  max_iterations: 10000
+  no_improvement_limit: 2500
+  initial_temperature: 100.0
+  cooling_rate: 0.99
+  oor_penalty_factor: 2.0
+  selection_bias: 1.0
+GREEDY_SOLUTION:
+  fill_factor: 0.8

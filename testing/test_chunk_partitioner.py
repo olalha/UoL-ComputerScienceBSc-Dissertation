@@ -7,7 +7,7 @@ from chunk_manager.chunk_partitioner import split_wc_into_chunks, _allocate_extr
 
 
 @pytest.fixture(autouse=True)
-def setup_random_seed():
+def test_setup_random_seed():
     """Set random seeds for reproducibility."""
     random.seed(42)
     np.random.seed(42)

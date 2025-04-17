@@ -19,6 +19,7 @@ _venv/
 
 # Ignore test files
 _testing/
+.pytest_cache/
 
 # Ignore evaluation results
 _eval_results/

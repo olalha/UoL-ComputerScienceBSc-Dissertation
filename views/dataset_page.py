@@ -27,88 +27,52 @@ def generate_dataset_structure_form() -> None:
     with st.expander("Generate Dataset From Rulebook", icon="📚", expanded=True):
         with st.form(key="generate_dataset_form", border=False):
             rulebook_for_dataset = st.selectbox("Rulebook Selector", rulebooks)
-            st.write("Warning: Invalid rulebooks will not be displayed.")
-            search_time_for_dataset = st.slider("Solution Search Time (seconds)", min_value=1, max_value=60, value=10)
+            max_iterations = st.slider(
+                "Max Number of Iterations for Optimization",
+                min_value=1000, 
+                max_value=20000, 
+                value=5000, 
+                step=1000
+            )
+            st.caption("More iterations take longer but may yield better accuracy.")
             
-            # Add advanced search parameters in two columns
-            col1, col2 = st.columns(2)
-            with col1:
-                initial_solution = st.selectbox(
-                    "Initial Solution", 
-                    options=["simple", "greedy"],
-                    format_func=lambda x: "Simple" if x == "simple" else "Greedy",
-                    help="Simple: Each chunk in its own collection. Greedy: Build collections incrementally."
-                )
-                
-                cost_function = st.selectbox(
-                    "Cost Function", 
-                    options=["simple", "enhanced"],
-                    format_func=lambda x: "Simple" if x == "simple" else "Enhanced",
-                    help="Simple: Distribution matching only. Enhanced: Balance distribution with collection count."
-                )
-                
-            with col2:
-                move_selector = st.selectbox(
-                    "Move Selector", 
-                    options=["static", "adaptive"],
-                    format_func=lambda x: "Static" if x == "static" else "Adaptive",
-                    help="Static: Equal probability for all moves. Adaptive: Adjusts based on current state."
-                )
-                
-                cooling_rate = st.slider(
-                    "Cooling Rate", 
-                    min_value=0.950, 
-                    max_value=0.999, 
-                    value=0.995, 
-                    step=0.001,
-                    format="%.3f",
-                    help="Higher values lead to slower cooling and more thorough search but take longer."
-                )
+            submitted = st.form_submit_button("Generate Dataset Structure", icon="🛠️")
+
+        # Process the form submission
+        if submitted:
+            # Load and validate the selected rulebook
+            rulebook, console_output = load_and_validate_rulebook(rulebook_for_dataset)
             
-            submitted = st.form_submit_button("Generate Dataset Structure")
-
-    # Process the form submission
-    if submitted:
-        # Load and validate the selected rulebook
-        rulebook, console_output = load_and_validate_rulebook(rulebook_for_dataset)
-        
-        # Display console output if any
-        if console_output:
-            st.text_area("Console Output", console_output, height=200)
-        
-        # Generate the dataset structure if the rulebook is valid
-        if rulebook:
-            with st.spinner("Generating dataset structure. Please wait...", show_time=True):
-                
-                # Generate dataset structure and capture console output
-                captured_output = io.StringIO()
-                with contextlib.redirect_stdout(captured_output):
-                    dataset = create_dataset_structure(
-                        rulebook=rulebook, 
-                        solution_search_time_s=search_time_for_dataset,
-                        initial_solution_fn=initial_solution,
-                        cost_function=cost_function,
-                        move_selector=move_selector,
-                        cooling_rate=cooling_rate
-                    )
-                
-                # Display console output if any
-                if captured_output.getvalue():
-                    st.text_area("Console Output", captured_output.getvalue(), height=200)
-
-                if dataset:
-                    # Save the dataset structure to a JSON file
-                    ds_meta = get_basic_counts(dataset)
-                    file_name = f"{dataset['content_title']} - {ds_meta['total_wc']}wc - {ds_meta['total_cc']}cc.json"
-                    result_path, console_output = validate_and_save_dataset(file_name, dataset, overwrite=False)
+            # Display console output if any
+            if console_output:
+                st.text_area("Console Output", console_output, height=200)
+            
+            # Generate the dataset structure if the rulebook is valid
+            if rulebook:
+                with st.spinner("Generating dataset structure. Please wait...", show_time=True):
                     
-                    # Handle the result of saving the dataset
-                    if console_output:
-                        st.text_area("Console Output", console_output, height=200)
-                    if result_path:
-                        add_new_file_and_select(result_path.name, 'dataset')
-                else:
-                    st.error("Failed to generate dataset structure. Please try again.")
+                    # Generate dataset structure and capture console output
+                    captured_output = io.StringIO()
+                    with contextlib.redirect_stdout(captured_output):
+                        dataset = create_dataset_structure(rulebook=rulebook, max_iterations=max_iterations)
+                    
+                    # Display console output if any
+                    if captured_output.getvalue():
+                        st.text_area("Console Output", captured_output.getvalue(), height=200)
+
+                    if dataset:
+                        # Save the dataset structure to a JSON file
+                        ds_meta = get_basic_counts(dataset)
+                        file_name = f"{dataset['content_title']} - {ds_meta['total_wc']}wc - {ds_meta['total_cc']}cc.json"
+                        result_path, console_output = validate_and_save_dataset(file_name, dataset, overwrite=False)
+                        
+                        # Handle the result of saving the dataset
+                        if console_output:
+                            st.text_area("Console Output", console_output, height=200)
+                        if result_path:
+                            add_new_file_and_select(result_path.name, 'dataset')
+                    else:
+                        st.error("Failed to generate dataset structure. Please try again.")
 
 @st.cache_data
 def plot_collection_distribution_with_st_cache(ds, mode: str) -> None:
