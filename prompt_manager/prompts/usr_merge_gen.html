@@ -1,0 +1,15 @@
+I want you to take the following text snippets and combine them into a cohesive review.
+- You are welcome re-order the position of the snippets as you see fit.
+- Do **NOT** change contents of the text snippets with the exception of altering a few words at the start/end of each snippet to help with cohesiveness of the whole review.
+- Do **NOT** add more text that is necessary to link the snippets together into a cohesive review.
+- Do **NOT** include an introduction or conclusion.
+- Do **NOT** include anything else in your response but the final review.
+- Your final output **MUST** be from the perspective of a user who has used the product.
+
+---
+
+{% for chunk in chunks %}
+Snippet {{ loop.index }}:
+{{ chunk }}
+
+{% endfor %}

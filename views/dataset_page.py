@@ -7,12 +7,31 @@ import json
 from typing import Dict, Any
 
 from utils.settings_manager import get_setting
+from prompt_manager.prompt_builder import list_available_templates
 from view_components.item_selector import saved_file_selector, get_files_list, get_selected_file, add_new_file_and_select
 from view_components.file_loader import load_and_validate_rulebook, validate_and_save_dataset, load_and_validate_dataset
 from dataset_manager.dataset_structurer import create_dataset_structure
-from dataset_manager.text_generator import generate_all_collection_texts_parallel
-from dataset_manager.dataset_visualizer import plot_collection_distribution, plot_topic_distribution, plot_sentiment_pie_chart, plot_sentiment_box_plot, get_dataset_copy_without_text
-from dataset_manager.dataset_analyser import get_basic_counts, get_text_presence_percentages, get_min_max_counts, get_unique_topics, get_unique_sentiments, get_collection_metrics, filter_collections
+from dataset_manager.text_generator import generate_collection_texts_multi_prompt, generate_collection_texts_single_prompt
+from dataset_manager.dataset_visualizer import (
+    plot_collection_distribution, 
+    plot_topic_distribution, 
+    plot_sentiment_pie_chart, 
+    plot_sentiment_box_plot, 
+    get_dataset_copy_without_text
+)
+from dataset_manager.dataset_analyser import (
+    get_basic_counts, 
+    get_text_presence_percentages, 
+    get_min_max_counts, 
+    get_unique_topics, 
+    get_unique_sentiments, 
+    get_collection_metrics, 
+    filter_collections,
+    compare_topic_proportions,
+    compare_global_sentiment_proportions,
+    compare_topic_sentiment_pair_proportions,
+    compare_collection_size_range_distribution
+)
 
 def generate_dataset_structure_form() -> None:
     """ Displays a form for generating dataset structures from rulebooks. """
@@ -28,33 +47,37 @@ def generate_dataset_structure_form() -> None:
         with st.form(key="generate_dataset_form", border=False):
             rulebook_for_dataset = st.selectbox("Rulebook Selector", rulebooks)
             max_iterations = st.slider(
-                "Max Number of Iterations for Optimization",
-                min_value=1000, 
-                max_value=20000, 
-                value=5000, 
-                step=1000
+                "Max Number of Iterations for Optimization:",
+                min_value=5000, 
+                max_value=100000, 
+                value=10000, 
+                step=5000
             )
-            st.caption("More iterations take longer but may yield better accuracy.")
+            st.caption("ℹ️ More iterations take longer but may yield better accuracy.")
             
             submitted = st.form_submit_button("Generate Dataset Structure", icon="🛠️")
 
         # Process the form submission
         if submitted:
             # Load and validate the selected rulebook
-            rulebook, console_output = load_and_validate_rulebook(rulebook_for_dataset)
+            rulebook_data, console_output = load_and_validate_rulebook(rulebook_for_dataset)
             
             # Display console output if any
             if console_output:
                 st.text_area("Console Output", console_output, height=200)
             
             # Generate the dataset structure if the rulebook is valid
-            if rulebook:
+            if rulebook_data:
                 with st.spinner("Generating dataset structure. Please wait...", show_time=True):
                     
                     # Generate dataset structure and capture console output
                     captured_output = io.StringIO()
                     with contextlib.redirect_stdout(captured_output):
-                        dataset = create_dataset_structure(rulebook=rulebook, max_iterations=max_iterations)
+                        dataset = create_dataset_structure(
+                            rulebook_data=rulebook_data,
+                            rulebook_file_name=rulebook_for_dataset, 
+                            max_iterations=max_iterations
+                        )
                     
                     # Display console output if any
                     if captured_output.getvalue():
@@ -69,8 +92,10 @@ def generate_dataset_structure_form() -> None:
                         # Handle the result of saving the dataset
                         if console_output:
                             st.text_area("Console Output", console_output, height=200)
+                            st.error("Failed to save the dataset structure.")
                         if result_path:
                             add_new_file_and_select(result_path.name, 'dataset')
+                            st.success("Dataset structure generated successfully!")
                     else:
                         st.error("Failed to generate dataset structure. Please try again.")
 
@@ -111,82 +136,108 @@ def display_dataset_metrics(dataset: Dict[str, Any]) -> None:
             st.metric("Chunks w/ Text", f"{meta.get("chunks_text_percent"):.1f}%")
         with cols[4]:
             st.metric("Collections w/ Text", f"{meta.get("collections_text_percent"):.1f}%")
+            
+        show_visualizations = st.checkbox("Show Visualizations", value=False, help="Display visualizations for dataset metrics.")
+        st.caption("ℹ️ Visualizations may take time to load and slow down the application, especially for large datasets.")
         
-        # Retrieve textless dataset for increased cache hits when preparing visualizations
-        ds_without_text = get_dataset_copy_without_text(dataset)
+        # Display all visualizations if enabled
+        if show_visualizations:
         
-        # Pre-generate all visualizations
-        visualizations = {
-            # Collection Distribution
-            'collection_chunk': plot_collection_distribution_with_st_cache(ds_without_text, mode='chunk'),
-            'collection_word': plot_collection_distribution_with_st_cache(ds_without_text, mode='word'),
+            # Retrieve textless dataset for increased cache hits when preparing visualizations
+            ds_without_text = get_dataset_copy_without_text(dataset)
             
-            # Topic Distribution
-            'topic_chunk': plot_topic_distribution_with_st_cache(ds_without_text, mode='chunk'),
-            'topic_word': plot_topic_distribution_with_st_cache(ds_without_text, mode='word'),
-            
-            # Sentiment Distribution
-            'sentiment_chunk': plot_sentiment_pie_chart_with_st_cache(ds_without_text, mode='chunk'),
-            'sentiment_word': plot_sentiment_pie_chart_with_st_cache(ds_without_text, mode='word'),
-            
-            # Word Count Box Plot
-            'word_count_box': plot_sentiment_box_plot_with_st_cache(ds_without_text)
-        }
-    
-        # Collection Size Distribution (Stacked Bar Chart)
-        with st.expander("Collection Size Distribution", expanded=False, icon="📈"):
-            st.subheader("Collection Size Distribution")
-            tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
-            with tab1:
-                if visualizations['collection_chunk']:
-                    st.pyplot(visualizations['collection_chunk'])
-                else:
-                    st.info("No chunk count distribution data available by collection.")
+            # Pre-generate all visualizations
+            visualizations = {
+                # Collection Distribution
+                'collection_chunk': plot_collection_distribution_with_st_cache(ds_without_text, mode='chunk'),
+                'collection_word': plot_collection_distribution_with_st_cache(ds_without_text, mode='word'),
                 
-            with tab2:
-                if visualizations['collection_word']:
-                    st.pyplot(visualizations['collection_word'])
-                else:
-                    st.info("No word count distribution data available by collection.")
-        
-        # Topic Coverage Distribution (Stacked Bar Chart)
-        with st.expander("Topic Coverage Distribution", expanded=False, icon="💬"):
-            st.subheader("Topic Coverage Distribution")
-            tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
-            with tab1:
-                if visualizations['topic_chunk']:
-                    st.pyplot(visualizations['topic_chunk'])
-                else:
-                    st.info("No chunk count distribution data available by topic.")
+                # Topic Distribution
+                'topic_chunk': plot_topic_distribution_with_st_cache(ds_without_text, mode='chunk'),
+                'topic_word': plot_topic_distribution_with_st_cache(ds_without_text, mode='word'),
                 
-            with tab2:
-                if visualizations['topic_word']:
-                    st.pyplot(visualizations['topic_word'])
-                else:
-                    st.info("No word count distribution data available by topic.")
+                # Sentiment Distribution
+                'sentiment_chunk': plot_sentiment_pie_chart_with_st_cache(ds_without_text, mode='chunk'),
+                'sentiment_word': plot_sentiment_pie_chart_with_st_cache(ds_without_text, mode='word'),
+                
+                # Word Count Box Plot
+                'word_count_box': plot_sentiment_box_plot_with_st_cache(ds_without_text)
+            }
         
-        # Overall Sentiment Distribution (Pie Charts and Box Plot)
-        with st.expander("Overall Sentiment Distribution", expanded=False, icon="😃"):
-            st.subheader("Overall Sentiment Distribution")
-            tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
-            with tab1:
-                if visualizations['sentiment_chunk']:
-                    st.pyplot(visualizations['sentiment_chunk'])
-                else:
-                    st.info("No chunk count sentiment distribution data available.")
-            with tab2:
-                if visualizations['sentiment_word']:
-                    st.pyplot(visualizations['sentiment_word'])
-                else:
-                    st.info("No word count sentiment distribution data available.")
+            # Collection Size Distribution (Stacked Bar Chart)
+            with st.expander("Collection Size Distribution", expanded=False, icon="📈"):
+                st.subheader("Collection Size Distribution")
+                tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
+                with tab1:
+                    if visualizations['collection_chunk']:
+                        st.pyplot(visualizations['collection_chunk'])
+                    else:
+                        st.info("No chunk count distribution data available by collection.")
+                    
+                with tab2:
+                    if visualizations['collection_word']:
+                        st.pyplot(visualizations['collection_word'])
+                    else:
+                        st.info("No word count distribution data available by collection.")
             
-        # Word Count Distribution by Chunk (Box Plot)
-        with st.expander("Word Count Distribution by Chunk", expanded=False, icon="📊"):
-            st.subheader("Word Count Distribution by Chunk")
-            if visualizations['word_count_box']:
-                st.pyplot(visualizations['word_count_box'])
-            else:
-                st.info("No word count data available for box plot.")
+            # Topic Coverage Distribution (Stacked Bar Chart)
+            with st.expander("Topic Coverage Distribution", expanded=False, icon="💬"):
+                st.subheader("Topic Coverage Distribution")
+                tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
+                with tab1:
+                    if visualizations['topic_chunk']:
+                        st.pyplot(visualizations['topic_chunk'])
+                    else:
+                        st.info("No chunk count distribution data available by topic.")
+                    
+                with tab2:
+                    if visualizations['topic_word']:
+                        st.pyplot(visualizations['topic_word'])
+                    else:
+                        st.info("No word count distribution data available by topic.")
+            
+            # Overall Sentiment Distribution (Pie Charts and Box Plot)
+            with st.expander("Overall Sentiment Distribution", expanded=False, icon="😃"):
+                st.subheader("Overall Sentiment Distribution")
+                tab1, tab2 = st.tabs(["By Chunk Count (cc)", "By Word Count (wc)"])
+                with tab1:
+                    if visualizations['sentiment_chunk']:
+                        st.pyplot(visualizations['sentiment_chunk'])
+                    else:
+                        st.info("No chunk count sentiment distribution data available.")
+                with tab2:
+                    if visualizations['sentiment_word']:
+                        st.pyplot(visualizations['sentiment_word'])
+                    else:
+                        st.info("No word count sentiment distribution data available.")
+                
+            # Word Count Distribution by Chunk (Box Plot)
+            with st.expander("Word Count Distribution by Chunk", expanded=False, icon="📊"):
+                st.subheader("Word Count Distribution by Chunk")
+                if visualizations['word_count_box']:
+                    st.pyplot(visualizations['word_count_box'])
+                else:
+                    st.info("No word count data available for box plot.")
+                
+    st.subheader("Rulebook Conformity")
+    with st.container(border=True):
+        cols = st.columns([2, 2, 2, 2])
+        with cols[0]:
+            st.metric("Topic Alignment", f"{compare_topic_proportions(dataset):.1f}%")
+        with cols[1]:
+            st.metric("Setiment Alignment", f"{compare_global_sentiment_proportions(dataset):.1f}%")
+        with cols[2]:
+            st.metric("T/S-pair Alignment", f"{compare_topic_sentiment_pair_proportions(dataset):.1f}%")
+        with cols[3]:
+            st.metric("Range Aligment", f"{compare_collection_size_range_distribution(dataset):.1f}%")
+        
+        st.write(f"Rulebook file name:")
+        file_name = dataset.get("rulebook_file_name", "")
+        if file_name:
+            st.success(file_name)
+            st.caption("⚠️ At the time of dataset generation - this may not be the current file name.")
+        else:
+            st.error("Rulebook file name not found in dataset.")
 
 def display_collections_table(dataset: Dict[str, Any]) -> None:
     """
@@ -416,75 +467,132 @@ def display_collection_veiwer(dataset: Dict[str, Any]) -> None:
         dataset: The dataset JSON object
     """
     
-    st.subheader("Select a Collection")
     content_title = dataset.get("content_title", "No Title")
-    collections = dataset.get("collections", [])
     
-    # Collection selector
-    col_count = len(collections)
-    col_id = st.number_input(
-        "Selected Collection ID", 
-        min_value=0, 
-        max_value=col_count-1, 
-        value=0,
-        step=1
-    )
-    st.caption(f"Collection ID range: 0-{col_count-1}")
+    st.subheader("Collection Selector")
+    with st.container(border=True):
+        collections = dataset.get("collections", [])
+        
+        # Collection selector
+        col_count = len(collections)
+        col_id = st.number_input(
+            "Selected Collection ID", 
+            min_value=0, 
+            max_value=col_count-1, 
+            value=0,
+            step=1
+        )
+        st.caption(f"Collection ID range: 0-{col_count-1}")
     
     # Get selected collection
     selected_collection = collections[col_id]
     
-    # Display generation button
-    models = [i for i in get_setting("OPENAI_LLM_MODELS").values()]
-    selected_model = st.selectbox(
-        f"LLM Model Selector",
-        models,
-        key=f"llm_model_selector"
-    )
-    collection_text = selected_collection.get("collection_text", "")
-    
-    # Generate collection text button
-    if st.button(f"{"Re-G" if collection_text else "G"}enerate Collection Text", icon="🤖"):
-        captured_output = io.StringIO()
-        with contextlib.redirect_stdout(captured_output):
-            with st.spinner("Generating collection text. Please wait...", show_time=True):
-                
-                # Create a new event loop for async operations
-                loop = asyncio.new_event_loop()
-                try:
-                    # Generate all texts in parallel
-                    collection_with_generated_text = loop.run_until_complete(
-                        generate_all_collection_texts_parallel(
-                            [col_id], 
-                            collections, 
-                            content_title, 
-                            selected_model
-                        )
-                    )
-                finally:
-                    loop.close()
+    st.subheader("Text Generation")
+    with st.container(border=True):
+        
+        cols = st.columns([2,2])
+        with cols[0]: 
+            # Model selector
+            models = [i for i in get_setting("OPENAI_LLM_MODELS").values()]
+            selected_model = st.selectbox(
+                f"LLM Model Selector",
+                models,
+                key=f"llm_model_selector"
+            )
+        with cols[1]:
+            # Strategy selector
+            strategy = st.selectbox(
+                "Generation Strategy",
+                ["Single-prompt", "Multi-prompt"],
+                index=0,
+                key="text_gen_strategy",
+                help="Single-prompt: Uses a single prompt to generate the complete text at once.\n \
+                    Multi-prompt: Generates text for each chunk separately and combines them."
+            )
+        
+        prompt_templates = list_available_templates()
+        
+        # Prompt template selector
+        if strategy == "Single-prompt":
+            colletion_template = st.selectbox(
+                "Prompt Template",
+                prompt_templates,
+                index=0,
+                key="collection_prompt_template"
+            )
+        else :
+            cols = st.columns([2, 2])
+            with cols[0]:
+                chunk_template = st.selectbox(
+                    "Chunk Prompt Template",
+                    prompt_templates,
+                    index=0,
+                    key="chunk_prompt_template"
+                )
+            with cols[1]:
+                merge_template = st.selectbox(
+                    "Merge Prompt Template",
+                    prompt_templates,
+                    index=0,
+                    key="merge_prompt_template"
+                )
+        
+        # Generate collection text button
+        collection_text = selected_collection.get("collection_text", "")
+        if st.button(f"{"Re-G" if collection_text else "G"}enerate Collection Text", icon="🤖"):
+            captured_output = io.StringIO()
+            with contextlib.redirect_stdout(captured_output):
+                with st.spinner("Generating collection text. Please wait...", show_time=True):
+                    
+                    # Create a new event loop for async operations
+                    loop = asyncio.new_event_loop()
+                    try:
+                        # Generate all texts in parallel
+                        if strategy == "Single-prompt":
+                            collection_with_generated_text = loop.run_until_complete(
+                                generate_collection_texts_single_prompt(
+                                    all_collections=collections,
+                                    collections_to_process=[col_id],
+                                    review_item=content_title,
+                                    model=selected_model,
+                                    prompt=colletion_template
+                                )
+                            )
+                        else:
+                            collection_with_generated_text = loop.run_until_complete(
+                                generate_collection_texts_multi_prompt(
+                                    all_collections=collections,
+                                    collections_to_process=[col_id],
+                                    review_item=content_title,
+                                    model=selected_model,
+                                    chunk_prompt=chunk_template,
+                                    merge_prompt=merge_template
+                                )
+                            )
+                    finally:
+                        loop.close()
 
-        # Save the updated dataset
-        dataset_path, console_output = validate_and_save_dataset(
-            get_selected_file('dataset'), 
-            dataset, 
-            overwrite=True
-        )
-        
-        # Save status of text generation for display after rerun
-        if dataset_path:
-            st.session_state['collection_text_gen'] = len(collection_with_generated_text)
-        else:
-            # Indicate saving failed with a negative count
-            st.session_state['collection_text_gen'] = -1
+            # Save the updated dataset
+            dataset_path, console_output = validate_and_save_dataset(
+                get_selected_file('dataset'), 
+                dataset, 
+                overwrite=True
+            )
             
-        # Store the console output
-        full_console_output = captured_output.getvalue() + console_output
-        if full_console_output:
-            st.session_state['collection_gen_console_output'] = full_console_output
-        
-        # Update the page to show the generated text
-        st.rerun()
+            # Save status of text generation for display after rerun
+            if dataset_path and collection_with_generated_text:
+                st.session_state['collection_text_gen'] = len(collection_with_generated_text)
+            else:
+                # Indicate saving failed with a negative count
+                st.session_state['collection_text_gen'] = -1
+                
+            # Store the console output
+            full_console_output = captured_output.getvalue() + console_output
+            if full_console_output:
+                st.session_state['collection_gen_console_output'] = full_console_output
+            
+            # Update the page to show the generated text
+            st.rerun()
     
     # Display success or failure message from previous run if any
     if 'collection_text_gen' in st.session_state:
@@ -608,65 +716,117 @@ def display_text_generator(dataset: Dict[str, Any]) -> None:
     # Help text
     st.write("ℹ️ For individual collection text generation, use the Collection Viewer tab.")
     
-    # Display generation button
-    models = [i for i in get_setting("OPENAI_LLM_MODELS").values()]
-    selected_model = st.selectbox(
-        f"LLM Model Selector",
-        models,
-        key=f"bulk_llm_model_selector"
-    )
-    
-    # Generate text button with disabled state if all collections have text
-    are_empty_collections = len(collections_without_text) == 0
-    if not are_empty_collections:
-        btn_text = f"Generate Text for {len(collections_without_text)} Collections"
-    else:
-        btn_text = "All Collections Already Text"
-    if st.button(btn_text, icon="🤖", disabled=are_empty_collections):
+    # Text generation settings
+    with st.container(border=True):
+        cols = st.columns([2, 2])
+        with cols[0]:
+            models = [i for i in get_setting("OPENAI_LLM_MODELS").values()]
+            selected_model = st.selectbox(
+                f"LLM Model Selector",
+                models,
+                key=f"bulk_llm_model_selector"
+            )
+        with cols[1]:
+            # Strategy selector
+            strategy = st.selectbox(
+                "Generation Strategy",
+                ["Single-prompt", "Multi-prompt"],
+                index=0,
+                key="bulk_text_gen_strategy",
+                help="Single-prompt: Uses a single prompt to generate the complete text at once.\n \
+                    Multi-prompt: Generates text for each chunk separately and combines them."
+            )
         
-        # Prepare for console output capture
-        captured_output = io.StringIO()
-        with contextlib.redirect_stdout(captured_output):
-            with st.spinner("Generating text for all collections without text. This may take a while...", show_time=True):
-                
-                # Create a new event loop for async operations
-                loop = asyncio.new_event_loop()
-                try:
-                    # Generate all texts in parallel
-                    successful_collections = loop.run_until_complete(
-                        generate_all_collection_texts_parallel(
-                            collections_without_text, 
-                            collections, 
-                            content_title, 
-                            selected_model
-                        )
-                    )
-                finally:
-                    loop.close()
-        
-        # Save the updated dataset
-        dataset_path, console_output = validate_and_save_dataset(
-            get_selected_file('dataset'), 
-            dataset, 
-            overwrite=True
-        )
-        
-        # Save status of text generation for display after rerun
-        successful_generations = len(successful_collections)
-        failed_generations = len(collections_without_text) - successful_generations
-        if dataset_path:
-            st.session_state['failed_generations_count'] = failed_generations
+        if strategy == "Single-prompt":
+            colletion_template = st.selectbox(
+                "Prompt Template",
+                list_available_templates(),
+                index=0,
+                key="bulk_collection_prompt_template"
+            )
         else:
-            # Indicate saving failed with a negative count
-            st.session_state['failed_generations_count'] = -1
-        
-        # Store the console output
-        full_console_output = captured_output.getvalue() + console_output
-        if full_console_output:
-            st.session_state['bulk_gen_console_output'] = full_console_output
-        
-        # Update the page
-        st.rerun()
+            cols = st.columns([2, 2])
+            with cols[0]:
+                chunk_template = st.selectbox(
+                    "Chunk Prompt Template",
+                    list_available_templates(),
+                    index=0,
+                    key="bulk_chunk_prompt_template"
+                )
+            with cols[1]:
+                merge_template = st.selectbox(
+                    "Merge Prompt Template",
+                    list_available_templates(),
+                    index=0,
+                    key="bulk_merge_prompt_template"
+                )
+    
+        # Generate text button with disabled state if all collections have text
+        are_empty_collections = len(collections_without_text) == 0
+        if not are_empty_collections:
+            btn_text = f"Generate Text for {len(collections_without_text)} Collections"
+            collection_to_process = collections_without_text
+        else:
+            btn_text = f"Re-Generate Text for {len(collections)} Collections"
+            collection_to_process = [i for i in range(len(collections))]
+        if st.button(btn_text, icon="🤖"):
+            
+            # Prepare for console output capture
+            captured_output = io.StringIO()
+            with contextlib.redirect_stdout(captured_output):
+                with st.spinner("Generating text for all collections without text. This may take a while...", show_time=True):
+                    
+                    # Create a new event loop for async operations
+                    loop = asyncio.new_event_loop()
+                    try:
+                        # Generate all texts in parallel
+                        if strategy == "Single-prompt":
+                            successful_collections = loop.run_until_complete(
+                                generate_collection_texts_single_prompt(
+                                    all_collections=collections,
+                                    collections_to_process=collection_to_process,
+                                    review_item=content_title,
+                                    model=selected_model,
+                                    prompt=colletion_template
+                                )
+                            )
+                        else:
+                            successful_collections = loop.run_until_complete(
+                                generate_collection_texts_multi_prompt(
+                                    all_collections=collections,
+                                    collections_to_process=collection_to_process,
+                                    review_item=content_title,
+                                    model=selected_model,
+                                    chunk_prompt=chunk_template,
+                                    merge_prompt=merge_template
+                                )
+                            )
+                    finally:
+                        loop.close()
+            
+            # Save the updated dataset
+            dataset_path, console_output = validate_and_save_dataset(
+                get_selected_file('dataset'), 
+                dataset, 
+                overwrite=True
+            )
+            
+            # Save status of text generation for display after rerun
+            if dataset_path and successful_collections:
+                successful_generations = len(successful_collections)
+                failed_generations = len(collections_without_text) - successful_generations
+                st.session_state['failed_generations_count'] = failed_generations
+            else:
+                # Indicate saving failed with a negative count
+                st.session_state['failed_generations_count'] = -1
+            
+            # Store the console output
+            full_console_output = captured_output.getvalue() + console_output
+            if full_console_output:
+                st.session_state['bulk_gen_console_output'] = full_console_output
+            
+            # Update the page
+            st.rerun()
 
 def display_export_options(dataset: Dict[str, Any]) -> None:
     """
@@ -780,6 +940,7 @@ if selected_dataset:
     # Display dataset content
     if dataset_structure:
         st.markdown("---")
+        st.write("Currently Selected Dataset:")
         st.info(f"{selected_dataset}")
 
         tab_names = ["Dataset Metrics", "Collections Table", "Collection Viewer", "Text Generator", "Export Data"]

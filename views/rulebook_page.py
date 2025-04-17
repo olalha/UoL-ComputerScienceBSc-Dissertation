@@ -26,6 +26,7 @@ def upload_file_form() -> None:
                     # Handle upload result
                     if result_path:
                         add_new_file_and_select(result_path.name, 'rulebook')
+                        st.success("File processed successfully!")
                     else:
                         st.error("File processing failed.")
             else:
@@ -120,7 +121,7 @@ def display_rulebook_data(rulebook_json: dict) -> None:
         st.dataframe(df_ts)
     
     # Add note about table scrollability
-    st.write("Note: The Content Rules table is vertically scrollable.")
+    st.caption("⚠️ Note: The Content Rules table is vertically scrollable.")
     
     # Add expandable section for rulebook explanation
     with st.expander("Rulebook Explanation", icon="❔"):
@@ -152,6 +153,7 @@ if selected_rulebook:
     # Display the rulebook data
     if rulebook_data:
         st.markdown("---")
+        st.write("Currently selected rulebook:")
         st.info(f"{selected_rulebook}")
         display_rulebook_data(rulebook_data)
 else:

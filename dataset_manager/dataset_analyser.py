@@ -8,7 +8,6 @@ storage with on-demand calculations.
 
 from typing import Dict, Any, List, Set
 
-
 def get_basic_counts(dataset: Dict[str, Any]) -> Dict[str, int]:
     """
     Get basic count metrics from a dataset.
@@ -312,20 +311,6 @@ def get_chunk_data_for_analysis(dataset: Dict[str, Any]) -> List[Dict[str, Any]]
     
     return chunks_data
 
-
-def get_content_title(dataset: Dict[str, Any]) -> str:
-    """
-    Get the review item name from the dataset.
-    
-    Args:
-        dataset: The dataset dictionary
-        
-    Returns:
-        Review item name or empty string if not found
-    """
-    return dataset.get('content_title', '')
-
-
 def get_unique_topics(dataset: Dict[str, Any]) -> Set[str]:
     """
     Get the set of all unique topics in the dataset.
@@ -500,3 +485,162 @@ def filter_collections(dataset, min_wc=0, max_wc=float('inf'), min_cc=0, max_cc=
         matching_indices.append(i)
         
     return matching_indices
+
+def compare_topic_proportions(dataset: dict) -> float:
+    """
+    Compare required topic proportions vs actual in the dataset.
+    Returns a percentage match (0-100).
+    """
+    rulebook = dataset.get("rulebook", {})
+    content_rules = rulebook.get("content_rules", {})
+    mode = rulebook.get("collection_mode", "word")
+    total = rulebook.get("total", 1)
+
+    # Calculate required proportions
+    required = {topic: rules.get("total_proportion", 0) for topic, rules in content_rules.items()}
+
+    # Calculate actual proportions
+    actual_counts = {}
+    actual_total = 0
+    for collection in dataset.get("collections", []):
+        for chunk in collection.get("chunks", []):
+            chunk_dict = chunk.get("chunk_dict", {})
+            topic = chunk_dict.get("topic", "Unknown")
+            if mode == "word":
+                wc = chunk_dict.get("wc", 0)
+                actual_counts[topic] = actual_counts.get(topic, 0) + wc
+                actual_total += wc
+            else:
+                actual_counts[topic] = actual_counts.get(topic, 0) + 1
+                actual_total += 1
+
+    actual = {topic: (actual_counts.get(topic, 0) / actual_total) if actual_total > 0 else 0 for topic in required}
+
+    # Calculate match as 1 - sum of absolute differences divided by 2 (to normalize)
+    diff_sum = sum(abs(required[topic] - actual.get(topic, 0)) for topic in required)
+    match = max(0.0, 1.0 - diff_sum / 2.0)
+    return round(match * 100, 2)
+
+def compare_global_sentiment_proportions(dataset: dict) -> float:
+    """
+    Compare required global sentiment proportions vs actual in the dataset.
+    Returns a percentage match (0-100).
+    """
+    rulebook = dataset.get("rulebook", {})
+    content_rules = rulebook.get("content_rules", {})
+    mode = rulebook.get("collection_mode", "word")
+    total = rulebook.get("total", 1)
+
+    # Aggregate required sentiment proportions (weighted by topic proportions)
+    sentiment_labels = ["positive", "neutral", "negative"]
+    required = {s: 0.0 for s in sentiment_labels}
+    for topic, rules in content_rules.items():
+        topic_prop = rules.get("total_proportion", 0)
+        sentiment_prop = rules.get("sentiment_proportion", [0, 0, 0])
+        for i, s in enumerate(sentiment_labels):
+            required[s] += topic_prop * sentiment_prop[i]
+
+    # Calculate actual sentiment proportions
+    actual_counts = {s: 0 for s in sentiment_labels}
+    actual_total = 0
+    for collection in dataset.get("collections", []):
+        for chunk in collection.get("chunks", []):
+            chunk_dict = chunk.get("chunk_dict", {})
+            sentiment = chunk_dict.get("sentiment", "Unknown")
+            if sentiment not in sentiment_labels:
+                continue
+            if mode == "word":
+                wc = chunk_dict.get("wc", 0)
+                actual_counts[sentiment] += wc
+                actual_total += wc
+            else:
+                actual_counts[sentiment] += 1
+                actual_total += 1
+
+    actual = {s: (actual_counts[s] / actual_total) if actual_total > 0 else 0 for s in sentiment_labels}
+
+    # Calculate match as 1 - sum of absolute differences divided by 2 (to normalize)
+    diff_sum = sum(abs(required[s] - actual.get(s, 0)) for s in sentiment_labels)
+    match = max(0.0, 1.0 - diff_sum / 2.0)
+    return round(match * 100, 2)
+
+def compare_topic_sentiment_pair_proportions(dataset: dict) -> float:
+    """
+    Compare required topic-sentiment pair proportions vs actual in the dataset.
+    Returns a percentage match (0-100).
+    """
+    rulebook = dataset.get("rulebook", {})
+    content_rules = rulebook.get("content_rules", {})
+    mode = rulebook.get("collection_mode", "word")
+    total = rulebook.get("total", 1)
+    sentiment_labels = ["positive", "neutral", "negative"]
+
+    # Required proportions for each topic-sentiment pair
+    required = {}
+    for topic, rules in content_rules.items():
+        topic_prop = rules.get("total_proportion", 0)
+        sentiment_prop = rules.get("sentiment_proportion", [0, 0, 0])
+        for i, s in enumerate(sentiment_labels):
+            required[(topic, s)] = topic_prop * sentiment_prop[i]
+
+    # Actual proportions for each topic-sentiment pair
+    actual_counts = {k: 0 for k in required}
+    actual_total = 0
+    for collection in dataset.get("collections", []):
+        for chunk in collection.get("chunks", []):
+            chunk_dict = chunk.get("chunk_dict", {})
+            topic = chunk_dict.get("topic", "Unknown")
+            sentiment = chunk_dict.get("sentiment", "Unknown")
+            if (topic, sentiment) not in required:
+                continue
+            if mode == "word":
+                wc = chunk_dict.get("wc", 0)
+                actual_counts[(topic, sentiment)] += wc
+                actual_total += wc
+            else:
+                actual_counts[(topic, sentiment)] += 1
+                actual_total += 1
+
+    actual = {k: (actual_counts[k] / actual_total) if actual_total > 0 else 0 for k in required}
+
+    # Calculate match as 1 - sum of absolute differences divided by 2 (to normalize)
+    diff_sum = sum(abs(required[k] - actual.get(k, 0)) for k in required)
+    match = max(0.0, 1.0 - diff_sum / 2.0)
+    return round(match * 100, 2)
+
+def compare_collection_size_range_distribution(dataset: dict) -> float:
+    """
+    Compare required collection size range distributions vs actual in the dataset.
+    Returns a percentage match (0-100).
+    """
+    rulebook = dataset.get("rulebook", {})
+    collection_ranges = rulebook.get("collection_ranges", [])
+    mode = rulebook.get("collection_mode", "word")
+
+    # Prepare required ranges and fractions
+    required_ranges = []
+    required_fractions = []
+    for r in collection_ranges:
+        required_ranges.append(tuple(r["range"]))
+        required_fractions.append(r["target_fraction"])
+
+    # Count actual collections in each range
+    actual_counts = [0 for _ in required_ranges]
+    total_collections = 0
+    for collection in dataset.get("collections", []):
+        if mode == "word":
+            size = sum(chunk.get("chunk_dict", {}).get("wc", 0) for chunk in collection.get("chunks", []))
+        else:
+            size = len(collection.get("chunks", []))
+        for i, (low, high) in enumerate(required_ranges):
+            if low <= size <= high:
+                actual_counts[i] += 1
+                break
+        total_collections += 1
+
+    actual_fractions = [(count / total_collections) if total_collections > 0 else 0 for count in actual_counts]
+
+    # Calculate match as 1 - sum of absolute differences divided by 2 (to normalize)
+    diff_sum = sum(abs(required_fractions[i] - actual_fractions[i]) for i in range(len(required_fractions)))
+    match = max(0.0, 1.0 - diff_sum / 2.0)
+    return round(match * 100, 2)

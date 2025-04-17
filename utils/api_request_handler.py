@@ -20,6 +20,11 @@ OPENAI_RETRY_LIMIT = get_setting('OPENAI_API', 'retry_limit')
 OPENAI_RATE_LIMIT_SLEEP_SEC = get_setting('OPENAI_API', 'rate_limit_sleep_sec')
 OPENAI_MAX_CLIENT_TIMEOUT_SEC = get_setting('OPENAI_API', 'max_client_timeout_sec')
 
+# Validate settings
+for setting in [OPENAI_RETRY_LIMIT, OPENAI_RATE_LIMIT_SLEEP_SEC, OPENAI_MAX_CLIENT_TIMEOUT_SEC]:
+    if setting is None or not isinstance(setting, int) or setting <= 0:
+        raise ValueError(f"Invalid OpenAI API setting: {setting}. Must be a positive integer.")
+
 async def _send_openai_request(json_content: dict, retries = OPENAI_RETRY_LIMIT) -> Dict:
     """
     Send an asynchronous request to the OpenAI API.

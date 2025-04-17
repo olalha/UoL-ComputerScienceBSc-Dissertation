@@ -37,7 +37,7 @@ CHUNK_VAR_MAPPING:
 # Collection forming settings
 SIMULATED_ANNEALING:
   max_iterations: 10000
-  no_improvement_limit: 2500
+  no_improvement_factor: 0.25
   initial_temperature: 100.0
   cooling_rate: 0.99
   oor_penalty_factor: 2.0

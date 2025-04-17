@@ -6,10 +6,9 @@ from chunk_manager.chunk_partitioner import get_chunks
 from chunk_manager.greedy_solution import create_greedy_initial_solution
 from chunk_manager.simulated_annealing import optimize_collections_with_simulated_annealing
 
-FILL_FACTOR = get_setting('GREEDY_SOLUTION', 'fill_factor')
-
 def create_dataset_structure(
-    rulebook: dict, 
+    rulebook_data: dict,
+    rulebook_file_name: str, 
     max_iterations: int) -> Optional[dict]:
     """
     Creates a structured dataset from a rulebook.
@@ -27,12 +26,12 @@ def create_dataset_structure(
     """
     
     # Validate rulebook values
-    if not validate_rulebook_values(rulebook):
+    if not validate_rulebook_values(rulebook_data):
         print(f"create_dataset_structure: Invalid rulebook")
         return None
     
     # Generate chunks
-    all_chunks_dicts = get_chunks(rulebook=rulebook)
+    all_chunks_dicts = get_chunks(rulebook=rulebook_data)
     
     # Check if partitioning failed
     if not all_chunks_dicts:
@@ -43,9 +42,12 @@ def create_dataset_structure(
     all_chunks_tuples = [tuple(chunk_dict.values()) for chunk_dict in all_chunks_dicts]
     
     # Obtain collection ranges and mode from rulebook
-    mode = rulebook['collection_mode']
-    size_ranges = [i['range'] for i in rulebook['collection_ranges']]
-    target_proportions = [i['target_fraction'] for i in rulebook['collection_ranges']]
+    mode = rulebook_data['collection_mode']
+    size_ranges = [i['range'] for i in rulebook_data['collection_ranges']]
+    target_proportions = [i['target_fraction'] for i in rulebook_data['collection_ranges']]
+    
+    # Obtain fill factor from settings
+    fill_factor = get_setting('GREEDY_SOLUTION', 'fill_factor')
     
     # Generate the greedy initial solution
     initial_solution = create_greedy_initial_solution(
@@ -53,7 +55,7 @@ def create_dataset_structure(
         size_ranges=size_ranges, 
         target_proportions=target_proportions,
         mode=mode,
-        fill_factor=FILL_FACTOR
+        fill_factor=fill_factor
     )
     
     # Check if initial solution was created successfully
@@ -84,7 +86,12 @@ def create_dataset_structure(
         collections.append(collection)
         
     # Build dataset structure and return it
-    return {'content_title': rulebook['content_title'], 'collections': collections}
+    return {
+        'content_title': rulebook_data['content_title'], 
+        'collections': collections,
+        'rulebook_file_name': rulebook_file_name,
+        'rulebook': rulebook_data
+    }
 
 def validate_dataset_values(dataset_structure: dict) -> bool:
     """
@@ -157,11 +164,6 @@ def validate_dataset_values(dataset_structure: dict) -> bool:
                 return False
             if chunk['chunk_text'] is not None and not isinstance(chunk['chunk_text'], str):
                 print(f"validate_dataset_structure: 'chunk_text' in chunk {j} of collection {i} must be None or a string")
-                return False
-            
-            # Check collection_text and chunk_text are consistent
-            if collection['collection_text'] is not None and chunk['chunk_text'] is None:
-                print(f"validate_dataset_structure: Collection at index {i} has collection_text but chunk at index {j} has no chunk_text")
                 return False
             
             # Check chunk_dict exists and is a dict

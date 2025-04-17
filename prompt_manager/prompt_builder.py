@@ -31,3 +31,16 @@ def render_prompt(template_name: str, context: dict = None) -> Optional[str]:
         # Raise a RuntimeError if there's an issue with template rendering
         print(f"render_prompt: Issue rendering template: '{template_name}'")
         return None
+
+def list_available_templates() -> list[str]:
+    """
+    Returns a list of all available template filenames in the prompts directory.
+
+    Returns:
+        list[str]: List of template filenames.
+    """
+    try:
+        return env.list_templates()
+    except Exception as e:
+        print(f"list_available_templates: Issue listing templates: {e}")
+        return []

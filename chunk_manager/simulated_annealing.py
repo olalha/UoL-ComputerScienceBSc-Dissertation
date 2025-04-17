@@ -6,7 +6,7 @@ from utils.settings_manager import get_setting
 
 # Global constants for simulated annealing algorithm
 MAX_ITERATIONS = get_setting("SIMULATED_ANNEALING", "max_iterations")
-NO_IMPROVEMENT_LIMIT = get_setting("SIMULATED_ANNEALING", "no_improvement_limit")
+NO_IMPROVEMENT_FACTOR = get_setting("SIMULATED_ANNEALING", "no_improvement_factor")
 INITIAL_TEMPERATURE = get_setting("SIMULATED_ANNEALING", "initial_temperature")
 COOLING_RATE = get_setting("SIMULATED_ANNEALING", "cooling_rate")
 
@@ -23,7 +23,7 @@ SELECTION_BIAS = get_setting("SIMULATED_ANNEALING", "selection_bias")
 
 def optimize_collections_with_simulated_annealing(
     initial_solution, max_iterations=MAX_ITERATIONS,
-    no_improvement_limit=NO_IMPROVEMENT_LIMIT,
+    no_improvement_factor=NO_IMPROVEMENT_FACTOR,
     initial_temperature=INITIAL_TEMPERATURE, 
     cooling_rate=COOLING_RATE,
     oor_penalty_factor=OOR_PENALTY_FACTOR,
@@ -46,7 +46,7 @@ def optimize_collections_with_simulated_annealing(
     valid_params = check_simulated_annealing_params(
         initial_solution,
         max_iterations,
-        no_improvement_limit,
+        no_improvement_factor,
         initial_temperature,
         cooling_rate,
         oor_penalty_factor,
@@ -69,8 +69,11 @@ def optimize_collections_with_simulated_annealing(
     iteration = 0
     no_improvement_count = 0
     
+    # Calculate maximum number of iterations without improvement based on the factor
+    max_no_improvement_count = max_iterations * no_improvement_factor
+    
     # Main simulated annealing loop
-    while iteration < max_iterations and no_improvement_count < no_improvement_limit:
+    while iteration < max_iterations and no_improvement_count < max_no_improvement_count:
         
         # Apply a move to current solution
         move_applied, move_info = apply_random_move(current_solution, selection_bias)
@@ -638,7 +641,7 @@ def revert_move(solution, move_info):
 def check_simulated_annealing_params(
     initial_solution,
     max_iterations,
-    no_improvement_limit,
+    no_improvement_factor,
     initial_temperature,
     cooling_rate,
     oor_penalty_factor,
@@ -648,14 +651,15 @@ def check_simulated_annealing_params(
     Validate parameters for simulated annealing optimization.
     Prints error and returns False if any parameter is invalid, otherwise returns True.
     """
+    
     if initial_solution is None:
         print("optimize_collections_with_simulated_annealing: initial_solution must not be None.")
         return False
     if not isinstance(max_iterations, int) or max_iterations <= 0:
         print("optimize_collections_with_simulated_annealing: max_iterations must be a positive integer.")
         return False
-    if not isinstance(no_improvement_limit, int) or 0 > no_improvement_limit or no_improvement_limit >= max_iterations:
-        print("optimize_collections_with_simulated_annealing: no_improvement_limit must be a non-negative integer less than max_iterations.")
+    if not isinstance(no_improvement_factor, (int, float)) or 0 > no_improvement_factor or no_improvement_factor > 1:
+        print("optimize_collections_with_simulated_annealing: no_improvement_factor must be a non-negative integer within the range (0,1).")
         return False
     if not isinstance(initial_temperature, (int, float)) or initial_temperature <= 0:
         print("optimize_collections_with_simulated_annealing: initial_temperature must be a positive number.")
