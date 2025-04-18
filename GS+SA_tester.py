@@ -1,7 +1,7 @@
 
-from _eval.rulebook_gen import generate_rulebook
+from input_manager.rulebook_generator import generate_rulebook
 from chunk_manager.chunk_partitioner import get_chunks
-from dataset_manager.dataset_visualizer import plot_collection_distribution
+from analysis_manager.dataset_visualizer import plot_collection_distribution
 
 from chunk_manager.greedy_solution import create_greedy_initial_solution
 from chunk_manager.simulated_annealing import optimize_collections_with_simulated_annealing

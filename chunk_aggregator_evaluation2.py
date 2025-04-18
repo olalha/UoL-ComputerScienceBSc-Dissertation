@@ -25,9 +25,9 @@ from pathlib import Path
 import copy
 
 # Import required modules from the project
-from _eval.rulebook_gen import generate_rulebook
+from input_manager.rulebook_generator import generate_rulebook
 from chunk_manager.chunk_partitioner import get_chunks
-from chunk_manager.rulebook_parser import validate_rulebook_values
+from input_manager.rulebook_parser import validate_rulebook_values
 from chunk_manager.solution_structure import SolutionStructure
 from chunk_manager.greedy_solution import create_greedy_initial_solution
 from chunk_manager.simulated_annealing import optimize_collections_with_simulated_annealing

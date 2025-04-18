@@ -1,8 +1,8 @@
 import asyncio
 
 from typing import Optional, List, Dict
-from prompt_manager.prompt_builder import render_prompt
-from utils.api_request_handler import prompt_openai_llm_parallel, prompt_openai_llm_single
+from generation_manager.prompt_builder import render_prompt
+from generation_manager.api_handler import prompt_openai_llm_parallel, prompt_openai_llm_single
 
 async def generate_collection_texts_multi_prompt(
     all_collections: List[dict], 

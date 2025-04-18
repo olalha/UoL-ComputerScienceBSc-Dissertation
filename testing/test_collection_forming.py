@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from chunk_manager import greedy_solution, simulated_annealing, chunk_partitioner
-from _eval import rulebook_gen
+from input_manager import rulebook_generator
 
 @pytest.fixture(autouse=True)
 def test_setup_random_seed():
@@ -15,7 +15,7 @@ def test_setup_random_seed():
 def test_simple_rulebook():
     # Generate a simple rulebook for testing
     topics = ["A", "B", "C"]
-    return rulebook_gen.generate_rulebook(
+    return rulebook_generator.generate_rulebook(
         mode="word",
         content_title="Test Content",
         total=2000,

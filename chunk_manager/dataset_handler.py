@@ -1,7 +1,7 @@
 from typing import Optional
 
 from utils.settings_manager import get_setting
-from chunk_manager.rulebook_parser import validate_rulebook_values
+from input_manager.rulebook_parser import validate_rulebook_values
 from chunk_manager.chunk_partitioner import get_chunks
 from chunk_manager.greedy_solution import create_greedy_initial_solution
 from chunk_manager.simulated_annealing import optimize_collections_with_simulated_annealing

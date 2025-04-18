@@ -25,13 +25,13 @@ from pathlib import Path
 import copy
 
 # Import required modules from the project
-from _eval.rulebook_gen import generate_rulebook
-from chunk_manager.chunk_aggregator import aggregate_chunks, compute_cost_enhanced, compute_total_wc
+from input_manager.rulebook_generator import generate_rulebook
+from chunk_manager.collection_forming_OLD import aggregate_chunks, compute_cost_enhanced, compute_total_wc
 from chunk_manager.chunk_partitioner import get_chunks
-from chunk_manager.rulebook_parser import validate_rulebook_values
-from dataset_manager.dataset_visualizer import plot_collection_distribution
-from dataset_manager.dataset_structurer import create_dataset_structure, validate_dataset_values
-from dataset_manager.dataset_analyser import get_basic_counts, get_collection_distribution
+from input_manager.rulebook_parser import validate_rulebook_values
+from analysis_manager.dataset_visualizer import plot_collection_distribution
+from chunk_manager.dataset_handler import create_dataset_structure, validate_dataset_values
+from analysis_manager.dataset_analyser import get_basic_counts, get_collection_distribution
 
 # ============================================================================
 # CONFIGURABLE PARAMETERS
