@@ -5,11 +5,14 @@ It sets up a Jinja2 environment and offers a function to render templates with g
 
 from importlib import resources
 from typing import Optional
-from jinja2 import Environment, FileSystemLoader, TemplateError
+from jinja2 import Environment, FileSystemLoader, TemplateError, UndefinedError, StrictUndefined
 
 # Set up Jinja2 environment
 with resources.path('prompt_manager', 'prompts') as prompts_path:
-    env = Environment(loader=FileSystemLoader(prompts_path))
+    env = Environment(
+        loader=FileSystemLoader(prompts_path),
+        undefined=StrictUndefined,
+    )
 
 def render_prompt(template_name: str, context: dict = None) -> Optional[str]:
     """
@@ -26,6 +29,11 @@ def render_prompt(template_name: str, context: dict = None) -> Optional[str]:
         # Render the template
         template = env.get_template(template_name)
         return template.render(context or {})
+    
+    except UndefinedError as e:
+        # Handle undefined variables in the template context
+        print(f"render_prompt: Undefined variable in template '{template_name}': {e}")
+        return None
     
     except TemplateError:
         # Raise a RuntimeError if there's an issue with template rendering

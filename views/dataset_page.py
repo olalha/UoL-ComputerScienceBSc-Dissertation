@@ -594,21 +594,21 @@ def display_collection_veiwer(dataset: Dict[str, Any]) -> None:
             # Update the page to show the generated text
             st.rerun()
     
-    # Display success or failure message from previous run if any
-    if 'collection_text_gen' in st.session_state:
-        generated_collections = st.session_state['collection_text_gen']
-        if generated_collections == -1:
-            st.error("Failed to save the dataset after generating text.")
-        elif generated_collections == 0:
-            st.warning("Failed to generate text for the selected collection.")
-        else:
-            st.success(f"Successfully generated text for selected collection.")
-        del st.session_state['collection_text_gen']
-        
-    # Display console output from previous run if any
-    if 'collection_gen_console_output' in st.session_state:
-        st.text_area("Console Output", st.session_state['collection_gen_console_output'], height=200)
-        del st.session_state['collection_gen_console_output']
+        # Display success or failure message from previous run if any
+        if 'collection_text_gen' in st.session_state:
+            generated_collections = st.session_state['collection_text_gen']
+            if generated_collections == -1:
+                st.error("Failed to save the dataset after generating text.")
+            elif generated_collections == 0:
+                st.warning("Failed to generate text for the selected collection.")
+            else:
+                st.success(f"Successfully generated text for selected collection.")
+            del st.session_state['collection_text_gen']
+            
+        # Display console output from previous run if any
+        if 'collection_gen_console_output' in st.session_state:
+            st.text_area("Console Output", st.session_state['collection_gen_console_output'], height=200)
+            del st.session_state['collection_gen_console_output']
         
     st.divider()
     st.subheader("Collection Information")
