@@ -30,6 +30,7 @@ from chunk_manager.collection_forming_OLD import aggregate_chunks, compute_cost_
 from chunk_manager.chunk_partitioner import get_chunks
 from input_manager.rulebook_parser import validate_rulebook_values
 from analysis_manager.dataset_visualizer import plot_collection_distribution
+from chunk_manager.solution_structure import SolutionStructure
 from chunk_manager.dataset_handler import create_dataset_structure, validate_dataset_values
 from analysis_manager.dataset_analyser import get_basic_counts, get_collection_distribution
 
@@ -38,15 +39,14 @@ from analysis_manager.dataset_analyser import get_basic_counts, get_collection_d
 # ============================================================================
 
 # Experiment configurations to test
-INITIAL_SOLUTION_METHODS = ["simple", "greedy"]
-COST_FUNCTIONS = ["simple", "enhanced"]
+INITIAL_SOLUTION_METHODS = ["simple"]
 MOVE_SELECTORS = ["static", "adaptive"]
 COOLING_RATES = [0.9975]
 
 # Test run parameters
 NUM_RUNS_PER_CONFIG = 2  # Number of times to run each configuration
 TIME_LIMIT_PER_RUN = 60  # Maximum time (seconds) for each run
-MAX_ITERATIONS = None    # Maximum iterations (None for no limit)
+MAX_ITERATIONS = 10000    # Maximum iterations (None for no limit)
 RECORD_ITERATION_INTERVAL = 10  # Record data every N iterations
 
 # Multiprocessing settings
@@ -56,23 +56,24 @@ MAX_WORKERS = max(1, mp.cpu_count() - 1)  # Use all but one CPU core
 # Rulebook generation parameters
 RULEBOOK_PARAMS = [
     {
-        "mode": "word",
-        "content_title": "EVAL - RULEBOOK 1",
-        "total": 20000,
-        "topics": [
-            "Quality", "Price", "Design", "Performance", "Support",
-            "Reliability", "Innovation", "Ergonomics", "Value", "Features",
-        ],
-        "topic_concentration": 2.0,
-        "sentiment_concentration": 2.0,
-        "chunk_size_avg": 60,
-        "chunk_size_max_deviation": 20,
-        "chunk_size_range_factor": 0.6,
-        "collection_ranges_count": 3,
-        "collection_ranges_max_val": 180,
-        "collection_ranges_min_val": 120,
-        "collection_distribution_concentration": 4.0,
-        "random_seed": 1234
+    "mode": "word",
+    "content_title": "EVAL - RULEBOOK 1",
+    "total": 30000,
+    "topics": [
+        "Quality", "Price", "Design", "Performance", "Support",
+        "Reliability", "Innovation", "Ergonomics", "Value", "Features",
+        "Usability", "Compatibility", "Durability", "Flexibility", "Aesthetics",
+    ],
+    "topic_concentration": 2.0,
+    "sentiment_concentration": 2.0,
+    "chunk_size_avg": 60,
+    "chunk_size_max_deviation": 20,
+    "chunk_size_range_factor": 0.6,
+    "collection_ranges_count": 4,
+    "collection_ranges_min_val": 120,
+    "collection_ranges_max_val": 200,
+    "collection_distribution_concentration": 50.0,
+    "random_seed": 1234
     }
 ]
 
@@ -123,23 +124,20 @@ def generate_test_rulebooks() -> List[Dict[str, Any]]:
 
 def get_configuration_name(config: Dict[str, Any]) -> str:
     """Generate a descriptive name for a configuration."""
-    return (f"{config['initial_solution']}-{config['cost_function']}-"
-            f"{config['move_selector']}-{config['cooling_rate']:.3f}")
+    return (f"{config['initial_solution']}-{config['move_selector']}-{config['cooling_rate']:.3f}")
 
 def get_all_configurations() -> List[Dict[str, Any]]:
     """Generate all combinations of configuration parameters."""
     configs = []
     
     for initial_solution in INITIAL_SOLUTION_METHODS:
-        for cost_function in COST_FUNCTIONS:
-            for move_selector in MOVE_SELECTORS:
-                for cooling_rate in COOLING_RATES:
-                    configs.append({
-                        'initial_solution': initial_solution,
-                        'cost_function': cost_function,
-                        'move_selector': move_selector,
-                        'cooling_rate': cooling_rate
-                    })
+        for move_selector in MOVE_SELECTORS:
+            for cooling_rate in COOLING_RATES:
+                configs.append({
+                    'initial_solution': initial_solution,
+                    'move_selector': move_selector,
+                    'cooling_rate': cooling_rate
+                })
     
     return configs
 
@@ -165,7 +163,6 @@ def evaluate_single_run(config: Dict[str, Any],
     """
     # Extract configuration parameters
     initial_solution = config['initial_solution']
-    cost_function = config['cost_function']
     move_selector = config['move_selector']
     cooling_rate = config['cooling_rate']
     
@@ -228,7 +225,6 @@ def evaluate_single_run(config: Dict[str, Any],
             size_ranges=rulebook['collection_ranges'],
             collection_mode=rulebook['collection_mode'],
             initial_solution_fn=initial_solution,
-            cost_function=cost_function,
             move_selector=move_selector,
             cooling_rate=cooling_rate,
             time_limit=TIME_LIMIT_PER_RUN,
@@ -250,13 +246,20 @@ def evaluate_single_run(config: Dict[str, Any],
                 'iterations_data': iterations_data
             }
         
-        # Calculate distribution match quality
-        collection_mode = rulebook['collection_mode']
-        if collection_mode == "word":
-            value_extractor = compute_total_wc
-        elif collection_mode == "chunk":
-            value_extractor = lambda collection: len(collection)
-        distribution_match = calculate_distribution_match(solution, rulebook['collection_ranges'], value_extractor)
+        size_ranges = [i['range'] for i in rulebook['collection_ranges']]
+        target_proportions = [i['target_fraction'] for i in rulebook['collection_ranges']]
+        
+        solution_structure = SolutionStructure(size_ranges, target_proportions, rulebook['collection_mode'])
+        for coll in solution:
+            all_chunk_tuples = []
+            for chunk in coll['chunks']:
+                all_chunk_tuples.append((chunk['topic'], chunk['sentiment'], chunk['wc']))
+            idx = solution_structure.create_new_collection()
+            solution_structure.add_chunks_to_collection(idx, all_chunk_tuples)
+                
+        distribution_match = solution_structure.get_total_absolute_deviation()
+        
+        oor_fraction = solution_structure.get_out_of_range_collections_fraction()
         
         # Calculate additional metrics
         num_collections = len(solution)
@@ -287,6 +290,7 @@ def evaluate_single_run(config: Dict[str, Any],
             'success': True,
             'num_collections': num_collections,
             'distribution_match': distribution_match,
+            'oor_fraction': oor_fraction,
             'execution_time': execution_time,
             'accepted_moves': accepted_moves,
             'rejected_moves': rejected_moves,
@@ -296,7 +300,7 @@ def evaluate_single_run(config: Dict[str, Any],
             'avg_collection_size': avg_collection_size,
             'size_std_dev': size_std_dev,
             'iterations_data': iterations_data,
-            'solution': solution  # For detailed analysis if needed
+            'solution': solution_structure,
         }
         
     except Exception as e:
@@ -387,6 +391,7 @@ def calculate_summary_statistics(results: List[Dict[str, Any]]) -> pd.DataFrame:
             avg_time = np.mean([r['execution_time'] for r in config_rb_runs])
             avg_collections = np.mean([r['num_collections'] for r in config_rb_runs])
             avg_dist_match = np.mean([r['distribution_match'] for r in config_rb_runs])
+            avg_oor_fraction = np.mean([r['oor_fraction'] for r in config_rb_runs])
             avg_acceptance_ratio = np.mean([r['acceptance_ratio'] for r in config_rb_runs])
             topic_violations = sum(r.get('topic_violations', 0) for r in config_rb_runs)
             
@@ -394,7 +399,6 @@ def calculate_summary_statistics(results: List[Dict[str, Any]]) -> pd.DataFrame:
             summaries.append({
                 'configuration': config_name,
                 'initial_solution': config['initial_solution'],
-                'cost_function': config['cost_function'],
                 'move_selector': config['move_selector'],
                 'cooling_rate': config['cooling_rate'],
                 'rulebook': rulebook_title,
@@ -402,6 +406,7 @@ def calculate_summary_statistics(results: List[Dict[str, Any]]) -> pd.DataFrame:
                 'avg_execution_time': avg_time,
                 'avg_collections': avg_collections,
                 'avg_distribution_match': avg_dist_match,
+                'avg_oor_fraction': avg_oor_fraction,
                 'avg_acceptance_ratio': avg_acceptance_ratio,
                 'total_topic_violations': topic_violations
             })
@@ -481,21 +486,10 @@ def create_solution_plots(best_runs: Dict[str, Any], output_path: str):
     # Isolate the best solutions
     best_solutions = {k: v['solution'] for k, v in best_runs.items()}
     
-    # Prepare dataset structure
-    all_datasets = []
-    for key, solution in best_solutions.items():
-        collections = []
-        for item in solution:
-            collection = {'chunks': [], 'collection_text': None}
-            for chunk_dict in item['chunks']:
-                collection['chunks'].append({'chunk_dict': chunk_dict, 'chunk_text': None})
-            collections.append(collection)
-        all_datasets.append({'content_title': key, 'collections': collections})
-    
     # Generate visualizations for best solutions
-    for dataset in all_datasets:
-        fig = plot_collection_distribution(dataset, 'word')
-        save_figure(fig, f"solution_plot_{dataset['content_title']}", 
+    for key, solution in best_solutions.items():
+        fig, _ = solution.visualize_solution(show=False)
+        save_figure(fig, f"solution_plot_{key}", 
             solution_viz_path, VISUALIZATION_FORMATS)
 
 def create_convergence_plots(best_runs: Dict[str, Any], output_path: str):
@@ -606,7 +600,6 @@ def main():
     # Save configuration parameters
     config_summary = {
         "initial_solution_methods": INITIAL_SOLUTION_METHODS,
-        "cost_functions": COST_FUNCTIONS,
         "move_selectors": MOVE_SELECTORS,
         "cooling_rates": COOLING_RATES,
         "num_runs_per_config": NUM_RUNS_PER_CONFIG,

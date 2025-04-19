@@ -196,44 +196,7 @@ def update_size_category(collection_obj: Dict[str, Any],
     return old_category, new_category
 
 
-""" Cost Functions """
-
-def compute_cost_simple(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]], value_extractor: Callable) -> float:
-    """
-    Original simple cost function: Compute the overall penalty as the sum over size categories 
-    of the squared difference between the actual fraction of collections in that category
-    and the target fraction.
-    
-    Args:
-        state: Current state (list of collections)
-        size_ranges: List of size range specifications
-        value_extractor: Function to extract value from collections
-        
-    Returns:
-        float: Distribution penalty score (lower is better)
-    """
-    # Count how many collections we have
-    N = len(state)
-    
-    # Count how many collections belong to each size category
-    counts = [0] * len(size_ranges)
-    for coll in state:
-        idx = coll['size_category']
-        if idx is not None:
-            counts[idx] += 1
-    
-    # Calculate penalty using squared difference from targets
-    penalty = 0.0
-    for i, size_range in enumerate(size_ranges):
-        # Calculate actual fraction of collections in this category
-        actual_fraction = counts[i] / N if N > 0 else 0
-        # Get target fraction
-        target_fraction = size_range['target_fraction']
-        # Add squared difference to penalty
-        penalty += (actual_fraction - target_fraction) ** 2
-    
-    return penalty
-
+""" Cost Function """
 
 def compute_cost_enhanced(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]], value_extractor: Callable) -> float:
     """Optimized version of the enhanced cost function"""
@@ -297,44 +260,6 @@ def compute_cost_enhanced(state: List[Dict[str, Any]], size_ranges: List[Dict[st
     )
     
     return combined_penalty
-    
-    # """ COLLECTION COUNT PENALTY """
-    
-    # # Count total chunks and unique topics
-    # total_chunks = 0
-    # topic_counts = {}
-    # for coll in state:
-    #     chunks_in_coll = len(coll['chunks'])
-    #     total_chunks += chunks_in_coll
-    #     for chunk in coll['chunks']:
-    #         topic = chunk['topic']
-    #         topic_counts[topic] = topic_counts.get(topic, 0) + 1
-    
-    # # Calculate minimum collections needed
-    # min_collections = max(topic_counts.values()) if topic_counts else 0
-    
-    # # Collection penalty: based on how far we are from optimal
-    # norm_coll_penalty = 0.0
-    # if min_collections > 0 and total_chunks > 0:
-    #     # Scale based on potential for optimization (0-1 range)
-    #     potential_range = total_chunks - min_collections
-    #     if potential_range > 0:
-    #         norm_coll_penalty = min(1.0, (N - min_collections) / potential_range)
-            
-    # """ WEIGHTING """
-    
-    # # Ensure weights sum to 1.0
-    # norm_weights_sum = DISTRIBUTION_WEIGHT + COLLECTION_COUNT_WEIGHT
-    # weight_coll = COLLECTION_COUNT_WEIGHT / norm_weights_sum
-    # weight_dist = DISTRIBUTION_WEIGHT / norm_weights_sum
-    
-    # # Apply weights and combine
-    # total_penalty = (
-    #     weight_coll * norm_coll_penalty +
-    #     weight_dist * norm_dist_penalty
-    # )
-    
-    # return total_penalty
 
 """ Move Probability Functions """
 
@@ -767,7 +692,6 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
                      size_ranges: List[Dict[str, Any]], 
                      collection_mode: str,
                      initial_solution_fn: str = "simple",
-                     cost_function: str = "simple",
                      move_selector: str = "static",
                      cooling_rate: float = 0.995,
                      time_limit: float = 10, 
@@ -784,7 +708,6 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
         size_ranges: Size range specifications
         collection_mode: "word" or "chunk" for size calculation
         initial_solution_fn: Initial solution method ("simple" or "greedy")
-        cost_function: Cost function to use ("simple" or "enhanced")
         move_selector: Move probability method ("static" or "adaptive")
         time_limit: Maximum run time in seconds
         max_iter: Maximum iterations (for simulated annealing)
@@ -808,19 +731,6 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
         print("aggregate_chunks: Invalid collection_mode (must be 'word' or 'chunk').")
         return None
     
-    cost_fn = compute_cost_enhanced
-    
-    # # Select cost function
-    # if cost_function == "simple":
-    #     cost_fn = compute_cost_simple
-    # elif cost_function == "enhanced":
-    #     cost_fn = compute_cost_enhanced
-    # else:
-    #     print(f"aggregate_chunks: Invalid cost function '{cost_function}'")
-    #     print("Valid options are: 'simple', 'enhanced'")
-    #     return None
-        
-    # Select move probability function
     if move_selector == "static":
         move_probs_fn = get_move_probs_static
     elif move_selector == "adaptive":
@@ -849,22 +759,18 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
         print("aggregate_chunks: Cooling rate must be a float.")
         return None
     
-    """ TEMP - COST FN == ENHANCED RUNS SIMULATED ANNEALING """
-    
-    # Run simulated annealing with configured components
-    best_state = initial_state
-    if cost_function == "enhanced":
-        best_state = simulated_annealing(
-            initial_state,
-            size_ranges,
-            value_extractor,
-            cost_fn,
-            move_probs_fn,
-            cooling_rate,
-            time_limit,
-            max_iter,
-            callback
-        )
+    # Run simulated annealing
+    best_state = simulated_annealing(
+        initial_state,
+        size_ranges,
+        value_extractor,
+        compute_cost_enhanced,
+        move_probs_fn,
+        cooling_rate,
+        time_limit,
+        max_iter,
+        callback
+    )
 
     # Verify solution validity
     for coll in best_state:

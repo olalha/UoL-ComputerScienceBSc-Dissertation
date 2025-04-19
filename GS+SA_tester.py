@@ -8,24 +8,24 @@ from chunk_manager.simulated_annealing import optimize_collections_with_simulate
 
 # Rulebook generation parameters
 RULEBOOK_PARAMS = {
-        "mode": "word",
-        "content_title": "EVAL - RULEBOOK 1",
-        "total": 20000,
-        "topics": [
-            "Quality", "Price", "Design", "Performance", "Support",
-            "Reliability", "Innovation", "Usability", "Durability", "Compatibility",
-            "Functionality", "Efficiency", "Flexibility", "Aesthetics", "Safety",
-        ],
-        "topic_concentration": 5.0,
-        "sentiment_concentration": 2.0,
-        "chunk_size_avg": 60,
-        "chunk_size_max_deviation": 20,
-        "chunk_size_range_factor": 0.6,
-        "collection_ranges_count": 6,
-        "collection_ranges_max_val": 240,
-        "collection_ranges_min_val": 120,
-        "collection_distribution_concentration": 50.0,
-        "random_seed": 1234
+    "mode": "word",
+    "content_title": "EVAL - RULEBOOK 1",
+    "total": 30000,
+    "topics": [
+        "Quality", "Price", "Design", "Performance", "Support",
+        "Reliability", "Innovation", "Ergonomics", "Value", "Features",
+        "Usability", "Compatibility", "Durability", "Flexibility", "Aesthetics",
+    ],
+    "topic_concentration": 2.0,
+    "sentiment_concentration": 2.0,
+    "chunk_size_avg": 60,
+    "chunk_size_max_deviation": 20,
+    "chunk_size_range_factor": 0.6,
+    "collection_ranges_count": 4,
+    "collection_ranges_min_val": 120,
+    "collection_ranges_max_val": 200,
+    "collection_distribution_concentration": 50.0,
+    "random_seed": 1234
 }
 
 rulebook = generate_rulebook(**RULEBOOK_PARAMS)
