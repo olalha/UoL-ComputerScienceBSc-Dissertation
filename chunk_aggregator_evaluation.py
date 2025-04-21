@@ -40,12 +40,12 @@ from analysis_manager.dataset_analyser import get_basic_counts, get_collection_d
 
 # Experiment configurations to test
 INITIAL_SOLUTION_METHODS = ["simple"]
-MOVE_SELECTORS = ["static", "adaptive"]
-COOLING_RATES = [0.9975]
+MOVE_SELECTORS = ["static"]
+COOLING_RATES = [0.99]
 
 # Test run parameters
 NUM_RUNS_PER_CONFIG = 2  # Number of times to run each configuration
-TIME_LIMIT_PER_RUN = 60  # Maximum time (seconds) for each run
+TIME_LIMIT_PER_RUN = 1000  # Maximum time (seconds) for each run
 MAX_ITERATIONS = 10000    # Maximum iterations (None for no limit)
 RECORD_ITERATION_INTERVAL = 10  # Record data every N iterations
 
@@ -199,6 +199,8 @@ def evaluate_single_run(config: Dict[str, Any],
     rejected_moves = 0
     iterations_data = []
     
+    overall_best_cost = float('inf')
+    
     # Custom callback to track progress
     def sa_callback(iteration, T, current_cost, best_cost, current_state, accepted):
         nonlocal accepted_moves, rejected_moves
@@ -207,14 +209,28 @@ def evaluate_single_run(config: Dict[str, Any],
             accepted_moves += 1
         else:
             rejected_moves += 1
+            
+        size_ranges = [i['range'] for i in rulebook['collection_ranges']]
+        target_proportions = [i['target_fraction'] for i in rulebook['collection_ranges']]
+        solution_structure = SolutionStructure(size_ranges, target_proportions, rulebook['collection_mode'])
+        for coll in current_state:
+            all_chunk_tuples = []
+            for chunk in coll['chunks']:
+                all_chunk_tuples.append((chunk['topic'], chunk['sentiment'], chunk['wc']))
+            idx = solution_structure.create_new_collection()
+            solution_structure.add_chunks_to_collection(idx, all_chunk_tuples)
+            
+        nomalized_current_cost = solution_structure.get_total_absolute_deviation()
+        nonlocal overall_best_cost 
+        overall_best_cost = min(overall_best_cost, nomalized_current_cost)
         
         # Record every n iterations
         if iteration % RECORD_ITERATION_INTERVAL == 0:
             iterations_data.append({
                 'iteration': iteration,
                 'temperature': T,
-                'current_cost': current_cost,
-                'best_cost': best_cost,
+                'current_cost': nomalized_current_cost,
+                'best_cost': overall_best_cost,
                 'num_collections': len(current_state)
             })
     
@@ -511,18 +527,20 @@ def create_convergence_plots(best_runs: Dict[str, Any], output_path: str):
         temp = [d['temperature'] for d in iterations_data]
         
         # Create figure with two y-axes
-        fig, ax1 = plt.subplots(1, 1, figsize=(12, 6))
+        fig, ax1 = plt.subplots(1, 1, figsize=(9, 3))
         
         # First y-axis for costs
-        ax1.plot(iterations, costs, label='Current Cost', color='blue', alpha=0.7)
-        ax1.plot(iterations, best_costs, label='Best Cost', color='green', alpha=0.7)
+        ax1.plot(iterations, costs, label='Current Cost', color='blue', alpha=0.3)
+        ax1.plot(iterations, best_costs, label='Best Cost', color='green', alpha=0.7, linestyle='--')
         ax1.set_xlabel("Iteration")
         ax1.set_ylabel("Cost", color='blue')
         ax1.tick_params(axis='y', labelcolor='blue')
         
+        ax1.set_xlim(0, 10000)
+        
         # Second y-axis for temperature
         ax2 = ax1.twinx()
-        ax2.plot(iterations, temp, label='Temperature', color='red', linestyle='--')
+        ax2.plot(iterations, temp, label='Temperature', color='red', linestyle=':')
         ax2.set_ylabel("Temperature", color='red')
         ax2.tick_params(axis='y', labelcolor='red')
         
@@ -532,7 +550,8 @@ def create_convergence_plots(best_runs: Dict[str, Any], output_path: str):
         # Combined legend
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', 
+                    frameon=True, facecolor='white', edgecolor='gray', framealpha=0.8)
         
         # Save figure
         save_figure(fig, f"convergence_plot_{key}", convergence_viz_path, VISUALIZATION_FORMATS)
@@ -564,7 +583,7 @@ def export_results(summary_df: pd.DataFrame,
                 compact = {"config_str": get_configuration_name(result['config'])}
                     
                 # Create a copy without the iteration structure
-                compact.update({k: v for k, v in result.items() if k != 'iterations_data'})
+                compact.update({k: v for k, v in result.items() if k != 'iterations_data' and k != 'solution'})
                 compact_results.append(compact)
                 
             json_path = os.path.join(output_path, "evaluation_results.json")

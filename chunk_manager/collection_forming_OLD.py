@@ -23,7 +23,7 @@ from typing import Optional, List, Dict, Any, Callable, Tuple, Union
 """ Tuneable Parameters """
 
 # Simulated annealing parameters
-INITIAL_TEMPERATURE = 1.0
+INITIAL_TEMPERATURE = 100.0
 MIN_TEMPERATURE = 0
 
 # Cost function weights (for enhanced cost function)
@@ -634,7 +634,7 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
     costs = []
     collection_counts = []
     
-    while (time.time() - start_time < time_limit) and (iteration < max_iter):
+    while (time.time() - start_time < time_limit) and (iteration < max_iter) and (stagnant_iterations < max_stagnant):
         iteration += 1
         
         # Generate neighbor state
@@ -752,8 +752,8 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
     
     # Validate cooling rate
     try:
-        if cooling_rate < 0.95 or cooling_rate >= 1.0:
-            print("aggregate_chunks: Cooling rate must be in the range [0.95, 1.0).")
+        if cooling_rate < 0.9 or cooling_rate >= 1.0:
+            print("aggregate_chunks: Cooling rate must be in the range [0.9, 1.0).")
             return None
     except ValueError:
         print("aggregate_chunks: Cooling rate must be a float.")

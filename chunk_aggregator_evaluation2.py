@@ -37,11 +37,16 @@ from chunk_manager.simulated_annealing import optimize_collections_with_simulate
 # ============================================================================
 
 # Experiment configurations to test
-INITIAL_SOLUTION_METHODS = ["simple", "greedy"]
-COOLING_RATES = [0.9, 0.95, 0.99, 0.999]
-NUM_OF_ITERATIONS = [2000, 5000, 10000]
-OOR_PENALTY_FACTOR = [0.0, 2.0, 4.0]
-SELECTION_BIAS = [1.0, 2.0, 4.0]
+INITIAL_SOLUTION_METHODS = ["simple"]
+COOLING_RATES = [0.99]
+NUM_OF_ITERATIONS = [10000]
+OOR_PENALTY_FACTOR = [1.0]
+SELECTION_BIAS = [2.0]
+# INITIAL_SOLUTION_METHODS = ["simple", "greedy"]
+# COOLING_RATES = [0.9, 0.95, 0.99, 0.999]
+# NUM_OF_ITERATIONS = [2000, 5000, 10000]
+# OOR_PENALTY_FACTOR = [0.0]
+# SELECTION_BIAS = [2.0]
 
 # Test run parameters
 NUM_RUNS_PER_CONFIG = 5  # Number of times to run each configuration
@@ -76,7 +81,7 @@ RULEBOOK_PARAMS = [
 ]
 
 # Visualization options
-CREATE_VISUALIZATIONS = False
+CREATE_VISUALIZATIONS = True
 VISUALIZATION_FORMATS = ['png']  # Options: 'png', 'svg', 'pdf'
 PLOT_DPI = 300
 
@@ -533,14 +538,16 @@ def create_convergence_plots(best_runs: Dict[str, Any], output_path: str):
         temp = [d['temperature'] for d in iterations_data]
         
         # Create figure with two y-axes
-        fig, ax1 = plt.subplots(1, 1, figsize=(12, 6))
+        fig, ax1 = plt.subplots(1, 1, figsize=(9, 3))
         
         # First y-axis for costs
-        ax1.plot(iterations, costs, label='Current Cost', color='blue', alpha=0.7)
+        ax1.plot(iterations, costs, label='Current Cost', color='blue', alpha=0.3)
         ax1.plot(iterations, best_costs, label='Best Cost', color='green', alpha=0.7, linestyle='--')
         ax1.set_xlabel("Iteration")
         ax1.set_ylabel("Cost", color='blue')
         ax1.tick_params(axis='y', labelcolor='blue')
+        
+        ax1.set_xlim(0, 10000)
         
         # Second y-axis for temperature
         ax2 = ax1.twinx()
@@ -554,7 +561,8 @@ def create_convergence_plots(best_runs: Dict[str, Any], output_path: str):
         # Combined legend
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', 
+                    frameon=True, facecolor='white', edgecolor='gray', framealpha=0.8)
         
         # Save figure
         save_figure(fig, f"convergence_plot_{config}", convergence_viz_path, VISUALIZATION_FORMATS)
