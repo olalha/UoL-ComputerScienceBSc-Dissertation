@@ -371,68 +371,100 @@ def greedy_solution(chunks: List[Dict[str, Any]],
     Returns:
         List[Dict[str, Any]]: The constructed state
     """
-    # Start with empty state
+    
     state = []
     
-    # Count occurrences of each topic
-    topic_counts = {}
+    from chunk_manager.greedy_solution import create_greedy_initial_solution
+    
+    ranges = [i['range'] for i in size_ranges]
+    target_proportions = [i['target_fraction'] for i in size_ranges]
+    
+    all_chunk_tuples = []
     for chunk in chunks:
-        topic = chunk['topic']
-        topic_counts[topic] = topic_counts.get(topic, 0) + 1
-    
-    # Sort chunks by frequency of topic (most frequent first) to establish minimum collections
-    sorted_chunks = sorted(chunks, key=lambda c: (-topic_counts[c['topic']], -c['wc']))
-    
-    # Process each chunk
-    for chunk in sorted_chunks:
-        best_collection = None
-        best_cost = float('inf')
-        best_index = -1
+        all_chunk_tuples.append((chunk['topic'], chunk['sentiment'], chunk['wc']))
         
-        # Try adding to each existing collection
-        for i, coll in enumerate(state):
-            # Skip if topic already exists in this collection
-            if any(c['topic'] == chunk['topic'] for c in coll['chunks']):
-                continue
-            
-            # Try adding chunk to this collection
-            new_chunks = coll['chunks'] + [chunk]
-            new_collection = {
-                'chunks': new_chunks,
-                'size_category': get_size_category_index(new_chunks, size_ranges, value_extractor)
+    # Create a greedy initial solution
+    greedy_solution = create_greedy_initial_solution(all_chunk_tuples, ranges, target_proportions, 'word', 0.8)
+    
+    for idx in greedy_solution.get_active_collection_indices():
+        collection = greedy_solution.get_all_chunks(idx)
+        all_chunk_dicts = []
+        for chunk in collection:
+            chunk_dict = {
+                'topic': chunk[0],
+                'sentiment': chunk[1],
+                'wc': chunk[2]
             }
-            
-            # Create temporary state to evaluate cost
-            temp_state = state.copy()
-            temp_state[i] = new_collection
-            cost = compute_cost_enhanced(temp_state, size_ranges, value_extractor)
-            
-            # If this is better than current best, update best
-            if cost < best_cost or (cost == best_cost and random.random() < GREEDY_RANDOMIZATION):
-                best_cost = cost
-                best_collection = new_collection
-                best_index = i
+            all_chunk_dicts.append(chunk_dict)
+        # Determine which size category this belongs to
+        category_idx = get_size_category_index(all_chunk_dicts, size_ranges, value_extractor)
+        # Add to state
+        state.append({'chunks': all_chunk_dicts, 'size_category': category_idx})
         
-        # Create a new collection with just this chunk
-        new_coll = {
-            'chunks': [chunk],
-            'size_category': get_size_category_index([chunk], size_ranges, value_extractor)
-        }
-        
-        # Evaluate creating a new collection
-        temp_state = state.copy()
-        temp_state.append(new_coll)
-        new_cost = compute_cost_enhanced(temp_state, size_ranges, value_extractor)
-        
-        # Compare with best existing collection
-        if new_cost < best_cost or (new_cost == best_cost and random.random() < GREEDY_RANDOMIZATION) or best_index < 0:
-            # Create new collection
-            state.append(new_coll)
-        else:
-            # Add to best existing collection
-            state[best_index] = best_collection
-    
     return state
+    
+    # # Start with empty state
+    # state = []
+    
+    # # Count occurrences of each topic
+    # topic_counts = {}
+    # for chunk in chunks:
+    #     topic = chunk['topic']
+    #     topic_counts[topic] = topic_counts.get(topic, 0) + 1
+    
+    # # Sort chunks by frequency of topic (most frequent first) to establish minimum collections
+    # sorted_chunks = sorted(chunks, key=lambda c: (-topic_counts[c['topic']], -c['wc']))
+    
+    # # Process each chunk
+    # for chunk in sorted_chunks:
+    #     best_collection = None
+    #     best_cost = float('inf')
+    #     best_index = -1
+        
+    #     # Try adding to each existing collection
+    #     for i, coll in enumerate(state):
+    #         # Skip if topic already exists in this collection
+    #         if any(c['topic'] == chunk['topic'] for c in coll['chunks']):
+    #             continue
+            
+    #         # Try adding chunk to this collection
+    #         new_chunks = coll['chunks'] + [chunk]
+    #         new_collection = {
+    #             'chunks': new_chunks,
+    #             'size_category': get_size_category_index(new_chunks, size_ranges, value_extractor)
+    #         }
+            
+    #         # Create temporary state to evaluate cost
+    #         temp_state = state.copy()
+    #         temp_state[i] = new_collection
+    #         cost = compute_cost_enhanced(temp_state, size_ranges, value_extractor)
+            
+    #         # If this is better than current best, update best
+    #         if cost < best_cost or (cost == best_cost and random.random() < GREEDY_RANDOMIZATION):
+    #             best_cost = cost
+    #             best_collection = new_collection
+    #             best_index = i
+        
+    #     # Create a new collection with just this chunk
+    #     new_coll = {
+    #         'chunks': [chunk],
+    #         'size_category': get_size_category_index([chunk], size_ranges, value_extractor)
+    #     }
+        
+    #     # Evaluate creating a new collection
+    #     temp_state = state.copy()
+    #     temp_state.append(new_coll)
+    #     new_cost = compute_cost_enhanced(temp_state, size_ranges, value_extractor)
+        
+    #     # Compare with best existing collection
+    #     if new_cost < best_cost or (new_cost == best_cost and random.random() < GREEDY_RANDOMIZATION) or best_index < 0:
+    #         # Create new collection
+    #         state.append(new_coll)
+    #     else:
+    #         # Add to best existing collection
+    #         state[best_index] = best_collection
+    
+    # return state
 
 
 """ Simulated Annealing Core Functions """
@@ -640,6 +672,7 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
         # Generate neighbor state
         neighbor = propose_neighbor(current_state, size_ranges, value_extractor, get_move_probs)
         if neighbor is None:
+            iteration += 1
             continue
             
         # Calculate costs
@@ -671,11 +704,6 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
         # Ensure T doesn't get too low
         if T < MIN_TEMPERATURE:
             T = MIN_TEMPERATURE
-        
-        # If stuck, give small boost to temperature
-        if stagnant_iterations > max_stagnant:
-            T = INITIAL_TEMPERATURE * 0.5
-            stagnant_iterations = 0
         
         # Track metrics every 10 iterations
         if iteration % 10 == 0:
