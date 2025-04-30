@@ -4,7 +4,7 @@ import pandas as pd
 from copy import deepcopy
 from typing import Dict, Any, List, Optional
 
-from dataset_manager.dataset_analyser import (
+from analysis_manager.dataset_analyser import (
     get_collection_sentiment_data,
     get_topic_sentiment_distribution, 
     get_sentiment_distribution,

@@ -7,19 +7,19 @@ import json
 from typing import Dict, Any
 
 from utils.settings_manager import get_setting
-from prompt_manager.prompt_builder import list_available_templates
+from generation_manager.prompt_builder import list_available_templates
 from view_components.item_selector import saved_file_selector, get_files_list, get_selected_file, add_new_file_and_select
 from view_components.file_loader import load_and_validate_rulebook, validate_and_save_dataset, load_and_validate_dataset
-from dataset_manager.dataset_structurer import create_dataset_structure
-from dataset_manager.text_generator import generate_collection_texts_multi_prompt, generate_collection_texts_single_prompt
-from dataset_manager.dataset_visualizer import (
+from chunk_manager.dataset_handler import create_dataset_structure
+from generation_manager.text_generator import generate_collection_texts_multi_prompt, generate_collection_texts_single_prompt
+from analysis_manager.dataset_visualizer import (
     plot_collection_distribution, 
     plot_topic_distribution, 
     plot_sentiment_pie_chart, 
     plot_sentiment_box_plot, 
     get_dataset_copy_without_text
 )
-from dataset_manager.dataset_analyser import (
+from analysis_manager.dataset_analyser import (
     get_basic_counts, 
     get_text_presence_percentages, 
     get_min_max_counts, 

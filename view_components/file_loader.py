@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Callable, Tuple, Union
 
 from utils.settings_manager import get_setting
-from dataset_manager.dataset_structurer import validate_dataset_values
-from chunk_manager.rulebook_parser import validate_rulebook_values, parse_rulebook_excel
+from chunk_manager.dataset_handler import validate_dataset_values
+from input_manager.rulebook_parser import validate_rulebook_values, parse_rulebook_excel
 
 # Directory to store JSON rulebooks
 RB_JSON_DIR = Path(__file__).parent.parent / get_setting('PATH', 'rulebooks_json')

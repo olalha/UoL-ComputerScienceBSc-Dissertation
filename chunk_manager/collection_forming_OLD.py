@@ -23,7 +23,7 @@ from typing import Optional, List, Dict, Any, Callable, Tuple, Union
 """ Tuneable Parameters """
 
 # Simulated annealing parameters
-INITIAL_TEMPERATURE = 1.0
+INITIAL_TEMPERATURE = 100.0
 MIN_TEMPERATURE = 0
 
 # Cost function weights (for enhanced cost function)
@@ -196,44 +196,7 @@ def update_size_category(collection_obj: Dict[str, Any],
     return old_category, new_category
 
 
-""" Cost Functions """
-
-def compute_cost_simple(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]], value_extractor: Callable) -> float:
-    """
-    Original simple cost function: Compute the overall penalty as the sum over size categories 
-    of the squared difference between the actual fraction of collections in that category
-    and the target fraction.
-    
-    Args:
-        state: Current state (list of collections)
-        size_ranges: List of size range specifications
-        value_extractor: Function to extract value from collections
-        
-    Returns:
-        float: Distribution penalty score (lower is better)
-    """
-    # Count how many collections we have
-    N = len(state)
-    
-    # Count how many collections belong to each size category
-    counts = [0] * len(size_ranges)
-    for coll in state:
-        idx = coll['size_category']
-        if idx is not None:
-            counts[idx] += 1
-    
-    # Calculate penalty using squared difference from targets
-    penalty = 0.0
-    for i, size_range in enumerate(size_ranges):
-        # Calculate actual fraction of collections in this category
-        actual_fraction = counts[i] / N if N > 0 else 0
-        # Get target fraction
-        target_fraction = size_range['target_fraction']
-        # Add squared difference to penalty
-        penalty += (actual_fraction - target_fraction) ** 2
-    
-    return penalty
-
+""" Cost Function """
 
 def compute_cost_enhanced(state: List[Dict[str, Any]], size_ranges: List[Dict[str, Any]], value_extractor: Callable) -> float:
     """Optimized version of the enhanced cost function"""
@@ -297,44 +260,6 @@ def compute_cost_enhanced(state: List[Dict[str, Any]], size_ranges: List[Dict[st
     )
     
     return combined_penalty
-    
-    # """ COLLECTION COUNT PENALTY """
-    
-    # # Count total chunks and unique topics
-    # total_chunks = 0
-    # topic_counts = {}
-    # for coll in state:
-    #     chunks_in_coll = len(coll['chunks'])
-    #     total_chunks += chunks_in_coll
-    #     for chunk in coll['chunks']:
-    #         topic = chunk['topic']
-    #         topic_counts[topic] = topic_counts.get(topic, 0) + 1
-    
-    # # Calculate minimum collections needed
-    # min_collections = max(topic_counts.values()) if topic_counts else 0
-    
-    # # Collection penalty: based on how far we are from optimal
-    # norm_coll_penalty = 0.0
-    # if min_collections > 0 and total_chunks > 0:
-    #     # Scale based on potential for optimization (0-1 range)
-    #     potential_range = total_chunks - min_collections
-    #     if potential_range > 0:
-    #         norm_coll_penalty = min(1.0, (N - min_collections) / potential_range)
-            
-    # """ WEIGHTING """
-    
-    # # Ensure weights sum to 1.0
-    # norm_weights_sum = DISTRIBUTION_WEIGHT + COLLECTION_COUNT_WEIGHT
-    # weight_coll = COLLECTION_COUNT_WEIGHT / norm_weights_sum
-    # weight_dist = DISTRIBUTION_WEIGHT / norm_weights_sum
-    
-    # # Apply weights and combine
-    # total_penalty = (
-    #     weight_coll * norm_coll_penalty +
-    #     weight_dist * norm_dist_penalty
-    # )
-    
-    # return total_penalty
 
 """ Move Probability Functions """
 
@@ -446,68 +371,100 @@ def greedy_solution(chunks: List[Dict[str, Any]],
     Returns:
         List[Dict[str, Any]]: The constructed state
     """
-    # Start with empty state
+    
     state = []
     
-    # Count occurrences of each topic
-    topic_counts = {}
+    from chunk_manager.greedy_solution import create_greedy_initial_solution
+    
+    ranges = [i['range'] for i in size_ranges]
+    target_proportions = [i['target_fraction'] for i in size_ranges]
+    
+    all_chunk_tuples = []
     for chunk in chunks:
-        topic = chunk['topic']
-        topic_counts[topic] = topic_counts.get(topic, 0) + 1
-    
-    # Sort chunks by frequency of topic (most frequent first) to establish minimum collections
-    sorted_chunks = sorted(chunks, key=lambda c: (-topic_counts[c['topic']], -c['wc']))
-    
-    # Process each chunk
-    for chunk in sorted_chunks:
-        best_collection = None
-        best_cost = float('inf')
-        best_index = -1
+        all_chunk_tuples.append((chunk['topic'], chunk['sentiment'], chunk['wc']))
         
-        # Try adding to each existing collection
-        for i, coll in enumerate(state):
-            # Skip if topic already exists in this collection
-            if any(c['topic'] == chunk['topic'] for c in coll['chunks']):
-                continue
-            
-            # Try adding chunk to this collection
-            new_chunks = coll['chunks'] + [chunk]
-            new_collection = {
-                'chunks': new_chunks,
-                'size_category': get_size_category_index(new_chunks, size_ranges, value_extractor)
+    # Create a greedy initial solution
+    greedy_solution = create_greedy_initial_solution(all_chunk_tuples, ranges, target_proportions, 'word', 0.8)
+    
+    for idx in greedy_solution.get_active_collection_indices():
+        collection = greedy_solution.get_all_chunks(idx)
+        all_chunk_dicts = []
+        for chunk in collection:
+            chunk_dict = {
+                'topic': chunk[0],
+                'sentiment': chunk[1],
+                'wc': chunk[2]
             }
-            
-            # Create temporary state to evaluate cost
-            temp_state = state.copy()
-            temp_state[i] = new_collection
-            cost = compute_cost_enhanced(temp_state, size_ranges, value_extractor)
-            
-            # If this is better than current best, update best
-            if cost < best_cost or (cost == best_cost and random.random() < GREEDY_RANDOMIZATION):
-                best_cost = cost
-                best_collection = new_collection
-                best_index = i
+            all_chunk_dicts.append(chunk_dict)
+        # Determine which size category this belongs to
+        category_idx = get_size_category_index(all_chunk_dicts, size_ranges, value_extractor)
+        # Add to state
+        state.append({'chunks': all_chunk_dicts, 'size_category': category_idx})
         
-        # Create a new collection with just this chunk
-        new_coll = {
-            'chunks': [chunk],
-            'size_category': get_size_category_index([chunk], size_ranges, value_extractor)
-        }
-        
-        # Evaluate creating a new collection
-        temp_state = state.copy()
-        temp_state.append(new_coll)
-        new_cost = compute_cost_enhanced(temp_state, size_ranges, value_extractor)
-        
-        # Compare with best existing collection
-        if new_cost < best_cost or (new_cost == best_cost and random.random() < GREEDY_RANDOMIZATION) or best_index < 0:
-            # Create new collection
-            state.append(new_coll)
-        else:
-            # Add to best existing collection
-            state[best_index] = best_collection
-    
     return state
+    
+    # # Start with empty state
+    # state = []
+    
+    # # Count occurrences of each topic
+    # topic_counts = {}
+    # for chunk in chunks:
+    #     topic = chunk['topic']
+    #     topic_counts[topic] = topic_counts.get(topic, 0) + 1
+    
+    # # Sort chunks by frequency of topic (most frequent first) to establish minimum collections
+    # sorted_chunks = sorted(chunks, key=lambda c: (-topic_counts[c['topic']], -c['wc']))
+    
+    # # Process each chunk
+    # for chunk in sorted_chunks:
+    #     best_collection = None
+    #     best_cost = float('inf')
+    #     best_index = -1
+        
+    #     # Try adding to each existing collection
+    #     for i, coll in enumerate(state):
+    #         # Skip if topic already exists in this collection
+    #         if any(c['topic'] == chunk['topic'] for c in coll['chunks']):
+    #             continue
+            
+    #         # Try adding chunk to this collection
+    #         new_chunks = coll['chunks'] + [chunk]
+    #         new_collection = {
+    #             'chunks': new_chunks,
+    #             'size_category': get_size_category_index(new_chunks, size_ranges, value_extractor)
+    #         }
+            
+    #         # Create temporary state to evaluate cost
+    #         temp_state = state.copy()
+    #         temp_state[i] = new_collection
+    #         cost = compute_cost_enhanced(temp_state, size_ranges, value_extractor)
+            
+    #         # If this is better than current best, update best
+    #         if cost < best_cost or (cost == best_cost and random.random() < GREEDY_RANDOMIZATION):
+    #             best_cost = cost
+    #             best_collection = new_collection
+    #             best_index = i
+        
+    #     # Create a new collection with just this chunk
+    #     new_coll = {
+    #         'chunks': [chunk],
+    #         'size_category': get_size_category_index([chunk], size_ranges, value_extractor)
+    #     }
+        
+    #     # Evaluate creating a new collection
+    #     temp_state = state.copy()
+    #     temp_state.append(new_coll)
+    #     new_cost = compute_cost_enhanced(temp_state, size_ranges, value_extractor)
+        
+    #     # Compare with best existing collection
+    #     if new_cost < best_cost or (new_cost == best_cost and random.random() < GREEDY_RANDOMIZATION) or best_index < 0:
+    #         # Create new collection
+    #         state.append(new_coll)
+    #     else:
+    #         # Add to best existing collection
+    #         state[best_index] = best_collection
+    
+    # return state
 
 
 """ Simulated Annealing Core Functions """
@@ -709,12 +666,13 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
     costs = []
     collection_counts = []
     
-    while (time.time() - start_time < time_limit) and (iteration < max_iter):
+    while (time.time() - start_time < time_limit) and (iteration < max_iter) and (stagnant_iterations < max_stagnant):
         iteration += 1
         
         # Generate neighbor state
         neighbor = propose_neighbor(current_state, size_ranges, value_extractor, get_move_probs)
         if neighbor is None:
+            iteration += 1
             continue
             
         # Calculate costs
@@ -747,11 +705,6 @@ def simulated_annealing(initial_state: List[Dict[str, Any]],
         if T < MIN_TEMPERATURE:
             T = MIN_TEMPERATURE
         
-        # If stuck, give small boost to temperature
-        if stagnant_iterations > max_stagnant:
-            T = INITIAL_TEMPERATURE * 0.5
-            stagnant_iterations = 0
-        
         # Track metrics every 10 iterations
         if iteration % 10 == 0:
             costs.append(current_cost)
@@ -767,7 +720,6 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
                      size_ranges: List[Dict[str, Any]], 
                      collection_mode: str,
                      initial_solution_fn: str = "simple",
-                     cost_function: str = "simple",
                      move_selector: str = "static",
                      cooling_rate: float = 0.995,
                      time_limit: float = 10, 
@@ -784,7 +736,6 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
         size_ranges: Size range specifications
         collection_mode: "word" or "chunk" for size calculation
         initial_solution_fn: Initial solution method ("simple" or "greedy")
-        cost_function: Cost function to use ("simple" or "enhanced")
         move_selector: Move probability method ("static" or "adaptive")
         time_limit: Maximum run time in seconds
         max_iter: Maximum iterations (for simulated annealing)
@@ -808,19 +759,6 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
         print("aggregate_chunks: Invalid collection_mode (must be 'word' or 'chunk').")
         return None
     
-    cost_fn = compute_cost_enhanced
-    
-    # # Select cost function
-    # if cost_function == "simple":
-    #     cost_fn = compute_cost_simple
-    # elif cost_function == "enhanced":
-    #     cost_fn = compute_cost_enhanced
-    # else:
-    #     print(f"aggregate_chunks: Invalid cost function '{cost_function}'")
-    #     print("Valid options are: 'simple', 'enhanced'")
-    #     return None
-        
-    # Select move probability function
     if move_selector == "static":
         move_probs_fn = get_move_probs_static
     elif move_selector == "adaptive":
@@ -842,29 +780,25 @@ def aggregate_chunks(chunks: List[Dict[str, Any]],
     
     # Validate cooling rate
     try:
-        if cooling_rate < 0.95 or cooling_rate >= 1.0:
-            print("aggregate_chunks: Cooling rate must be in the range [0.95, 1.0).")
+        if cooling_rate < 0.9 or cooling_rate >= 1.0:
+            print("aggregate_chunks: Cooling rate must be in the range [0.9, 1.0).")
             return None
     except ValueError:
         print("aggregate_chunks: Cooling rate must be a float.")
         return None
     
-    """ TEMP - COST FN == ENHANCED RUNS SIMULATED ANNEALING """
-    
-    # Run simulated annealing with configured components
-    best_state = initial_state
-    if cost_function == "enhanced":
-        best_state = simulated_annealing(
-            initial_state,
-            size_ranges,
-            value_extractor,
-            cost_fn,
-            move_probs_fn,
-            cooling_rate,
-            time_limit,
-            max_iter,
-            callback
-        )
+    # Run simulated annealing
+    best_state = simulated_annealing(
+        initial_state,
+        size_ranges,
+        value_extractor,
+        compute_cost_enhanced,
+        move_probs_fn,
+        cooling_rate,
+        time_limit,
+        max_iter,
+        callback
+    )
 
     # Verify solution validity
     for coll in best_state:

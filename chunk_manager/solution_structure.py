@@ -652,7 +652,7 @@ class SolutionStructure:
             fig, ax: The figure and axis objects
         """
         if fig is None or ax is None:
-            fig, ax = plt.subplots(figsize=(12, 6))
+            fig, ax = plt.subplots(figsize=(9, 5))
             
         # Clear the axis for updates
         ax.clear()

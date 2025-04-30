@@ -122,10 +122,6 @@ def display_rulebook_data(rulebook_json: dict) -> None:
     
     # Add note about table scrollability
     st.caption("⚠️ Note: The Content Rules table is vertically scrollable.")
-    
-    # Add expandable section for rulebook explanation
-    with st.expander("Rulebook Explanation", icon="❔"):
-        st.write("TODO: Add explanation here.")
 
 # --- Streamlit Page Layout ---
 st.title("Rulebooks")

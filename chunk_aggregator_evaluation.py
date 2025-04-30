@@ -25,28 +25,28 @@ from pathlib import Path
 import copy
 
 # Import required modules from the project
-from _eval.rulebook_gen import generate_rulebook
-from chunk_manager.chunk_aggregator import aggregate_chunks, compute_cost_enhanced, compute_total_wc
+from input_manager.rulebook_generator import generate_rulebook
+from chunk_manager.collection_forming_OLD import aggregate_chunks, compute_cost_enhanced, compute_total_wc
 from chunk_manager.chunk_partitioner import get_chunks
-from chunk_manager.rulebook_parser import validate_rulebook_values
-from dataset_manager.dataset_visualizer import plot_collection_distribution
-from dataset_manager.dataset_structurer import create_dataset_structure, validate_dataset_values
-from dataset_manager.dataset_analyser import get_basic_counts, get_collection_distribution
+from input_manager.rulebook_parser import validate_rulebook_values
+from analysis_manager.dataset_visualizer import plot_collection_distribution
+from chunk_manager.solution_structure import SolutionStructure
+from chunk_manager.dataset_handler import create_dataset_structure, validate_dataset_values
+from analysis_manager.dataset_analyser import get_basic_counts, get_collection_distribution
 
 # ============================================================================
 # CONFIGURABLE PARAMETERS
 # ============================================================================
 
 # Experiment configurations to test
-INITIAL_SOLUTION_METHODS = ["simple", "greedy"]
-COST_FUNCTIONS = ["simple", "enhanced"]
-MOVE_SELECTORS = ["static", "adaptive"]
-COOLING_RATES = [0.9975]
+INITIAL_SOLUTION_METHODS = ["greedy"]
+MOVE_SELECTORS = ["static"]
+COOLING_RATES = [0.99]
 
 # Test run parameters
-NUM_RUNS_PER_CONFIG = 2  # Number of times to run each configuration
-TIME_LIMIT_PER_RUN = 60  # Maximum time (seconds) for each run
-MAX_ITERATIONS = None    # Maximum iterations (None for no limit)
+NUM_RUNS_PER_CONFIG = 5  # Number of times to run each configuration
+TIME_LIMIT_PER_RUN = 1000  # Maximum time (seconds) for each run
+MAX_ITERATIONS = 10000    # Maximum iterations (None for no limit)
 RECORD_ITERATION_INTERVAL = 10  # Record data every N iterations
 
 # Multiprocessing settings
@@ -56,23 +56,24 @@ MAX_WORKERS = max(1, mp.cpu_count() - 1)  # Use all but one CPU core
 # Rulebook generation parameters
 RULEBOOK_PARAMS = [
     {
-        "mode": "word",
-        "content_title": "EVAL - RULEBOOK 1",
-        "total": 20000,
-        "topics": [
-            "Quality", "Price", "Design", "Performance", "Support",
-            "Reliability", "Innovation", "Ergonomics", "Value", "Features",
-        ],
-        "topic_concentration": 2.0,
-        "sentiment_concentration": 2.0,
-        "chunk_size_avg": 60,
-        "chunk_size_max_deviation": 20,
-        "chunk_size_range_factor": 0.6,
-        "collection_ranges_count": 3,
-        "collection_ranges_max_val": 180,
-        "collection_ranges_min_val": 120,
-        "collection_distribution_concentration": 4.0,
-        "random_seed": 1234
+    "mode": "word",
+    "content_title": "EVAL - RULEBOOK 1",
+    "total": 30000,
+    "topics": [
+        "Quality", "Price", "Design", "Performance", "Support",
+        "Reliability", "Innovation", "Ergonomics", "Value", "Features",
+        "Usability", "Compatibility", "Durability", "Flexibility", "Aesthetics",
+    ],
+    "topic_concentration": 2.0,
+    "sentiment_concentration": 2.0,
+    "chunk_size_avg": 60,
+    "chunk_size_max_deviation": 20,
+    "chunk_size_range_factor": 0.6,
+    "collection_ranges_count": 4,
+    "collection_ranges_min_val": 120,
+    "collection_ranges_max_val": 200,
+    "collection_distribution_concentration": 50.0,
+    "random_seed": 1234
     }
 ]
 
@@ -123,23 +124,20 @@ def generate_test_rulebooks() -> List[Dict[str, Any]]:
 
 def get_configuration_name(config: Dict[str, Any]) -> str:
     """Generate a descriptive name for a configuration."""
-    return (f"{config['initial_solution']}-{config['cost_function']}-"
-            f"{config['move_selector']}-{config['cooling_rate']:.3f}")
+    return (f"{config['initial_solution']}-{config['move_selector']}-{config['cooling_rate']:.3f}")
 
 def get_all_configurations() -> List[Dict[str, Any]]:
     """Generate all combinations of configuration parameters."""
     configs = []
     
     for initial_solution in INITIAL_SOLUTION_METHODS:
-        for cost_function in COST_FUNCTIONS:
-            for move_selector in MOVE_SELECTORS:
-                for cooling_rate in COOLING_RATES:
-                    configs.append({
-                        'initial_solution': initial_solution,
-                        'cost_function': cost_function,
-                        'move_selector': move_selector,
-                        'cooling_rate': cooling_rate
-                    })
+        for move_selector in MOVE_SELECTORS:
+            for cooling_rate in COOLING_RATES:
+                configs.append({
+                    'initial_solution': initial_solution,
+                    'move_selector': move_selector,
+                    'cooling_rate': cooling_rate
+                })
     
     return configs
 
@@ -165,7 +163,6 @@ def evaluate_single_run(config: Dict[str, Any],
     """
     # Extract configuration parameters
     initial_solution = config['initial_solution']
-    cost_function = config['cost_function']
     move_selector = config['move_selector']
     cooling_rate = config['cooling_rate']
     
@@ -202,6 +199,8 @@ def evaluate_single_run(config: Dict[str, Any],
     rejected_moves = 0
     iterations_data = []
     
+    overall_best_cost = float('inf')
+    
     # Custom callback to track progress
     def sa_callback(iteration, T, current_cost, best_cost, current_state, accepted):
         nonlocal accepted_moves, rejected_moves
@@ -210,14 +209,28 @@ def evaluate_single_run(config: Dict[str, Any],
             accepted_moves += 1
         else:
             rejected_moves += 1
+            
+        size_ranges = [i['range'] for i in rulebook['collection_ranges']]
+        target_proportions = [i['target_fraction'] for i in rulebook['collection_ranges']]
+        solution_structure = SolutionStructure(size_ranges, target_proportions, rulebook['collection_mode'])
+        for coll in current_state:
+            all_chunk_tuples = []
+            for chunk in coll['chunks']:
+                all_chunk_tuples.append((chunk['topic'], chunk['sentiment'], chunk['wc']))
+            idx = solution_structure.create_new_collection()
+            solution_structure.add_chunks_to_collection(idx, all_chunk_tuples)
+            
+        nomalized_current_cost = solution_structure.get_total_absolute_deviation()
+        nonlocal overall_best_cost 
+        overall_best_cost = min(overall_best_cost, nomalized_current_cost)
         
         # Record every n iterations
         if iteration % RECORD_ITERATION_INTERVAL == 0:
             iterations_data.append({
                 'iteration': iteration,
                 'temperature': T,
-                'current_cost': current_cost,
-                'best_cost': best_cost,
+                'current_cost': nomalized_current_cost,
+                'best_cost': overall_best_cost,
                 'num_collections': len(current_state)
             })
     
@@ -228,7 +241,6 @@ def evaluate_single_run(config: Dict[str, Any],
             size_ranges=rulebook['collection_ranges'],
             collection_mode=rulebook['collection_mode'],
             initial_solution_fn=initial_solution,
-            cost_function=cost_function,
             move_selector=move_selector,
             cooling_rate=cooling_rate,
             time_limit=TIME_LIMIT_PER_RUN,
@@ -250,13 +262,20 @@ def evaluate_single_run(config: Dict[str, Any],
                 'iterations_data': iterations_data
             }
         
-        # Calculate distribution match quality
-        collection_mode = rulebook['collection_mode']
-        if collection_mode == "word":
-            value_extractor = compute_total_wc
-        elif collection_mode == "chunk":
-            value_extractor = lambda collection: len(collection)
-        distribution_match = calculate_distribution_match(solution, rulebook['collection_ranges'], value_extractor)
+        size_ranges = [i['range'] for i in rulebook['collection_ranges']]
+        target_proportions = [i['target_fraction'] for i in rulebook['collection_ranges']]
+        
+        solution_structure = SolutionStructure(size_ranges, target_proportions, rulebook['collection_mode'])
+        for coll in solution:
+            all_chunk_tuples = []
+            for chunk in coll['chunks']:
+                all_chunk_tuples.append((chunk['topic'], chunk['sentiment'], chunk['wc']))
+            idx = solution_structure.create_new_collection()
+            solution_structure.add_chunks_to_collection(idx, all_chunk_tuples)
+                
+        distribution_match = solution_structure.get_total_absolute_deviation()
+        
+        oor_fraction = solution_structure.get_out_of_range_collections_fraction()
         
         # Calculate additional metrics
         num_collections = len(solution)
@@ -287,6 +306,7 @@ def evaluate_single_run(config: Dict[str, Any],
             'success': True,
             'num_collections': num_collections,
             'distribution_match': distribution_match,
+            'oor_fraction': oor_fraction,
             'execution_time': execution_time,
             'accepted_moves': accepted_moves,
             'rejected_moves': rejected_moves,
@@ -296,7 +316,7 @@ def evaluate_single_run(config: Dict[str, Any],
             'avg_collection_size': avg_collection_size,
             'size_std_dev': size_std_dev,
             'iterations_data': iterations_data,
-            'solution': solution  # For detailed analysis if needed
+            'solution': solution_structure,
         }
         
     except Exception as e:
@@ -387,6 +407,7 @@ def calculate_summary_statistics(results: List[Dict[str, Any]]) -> pd.DataFrame:
             avg_time = np.mean([r['execution_time'] for r in config_rb_runs])
             avg_collections = np.mean([r['num_collections'] for r in config_rb_runs])
             avg_dist_match = np.mean([r['distribution_match'] for r in config_rb_runs])
+            avg_oor_fraction = np.mean([r['oor_fraction'] for r in config_rb_runs])
             avg_acceptance_ratio = np.mean([r['acceptance_ratio'] for r in config_rb_runs])
             topic_violations = sum(r.get('topic_violations', 0) for r in config_rb_runs)
             
@@ -394,7 +415,6 @@ def calculate_summary_statistics(results: List[Dict[str, Any]]) -> pd.DataFrame:
             summaries.append({
                 'configuration': config_name,
                 'initial_solution': config['initial_solution'],
-                'cost_function': config['cost_function'],
                 'move_selector': config['move_selector'],
                 'cooling_rate': config['cooling_rate'],
                 'rulebook': rulebook_title,
@@ -402,6 +422,7 @@ def calculate_summary_statistics(results: List[Dict[str, Any]]) -> pd.DataFrame:
                 'avg_execution_time': avg_time,
                 'avg_collections': avg_collections,
                 'avg_distribution_match': avg_dist_match,
+                'avg_oor_fraction': avg_oor_fraction,
                 'avg_acceptance_ratio': avg_acceptance_ratio,
                 'total_topic_violations': topic_violations
             })
@@ -459,9 +480,6 @@ def create_visualizations(summary_df: pd.DataFrame,
     # Create solution visualizations
     create_solution_plots(best_runs, viz_path)
     
-    # Set plot style
-    plt.style.use('seaborn-v0_8-darkgrid')
-    
     # Create convergence plots
     create_convergence_plots(best_runs, viz_path)
 
@@ -481,21 +499,10 @@ def create_solution_plots(best_runs: Dict[str, Any], output_path: str):
     # Isolate the best solutions
     best_solutions = {k: v['solution'] for k, v in best_runs.items()}
     
-    # Prepare dataset structure
-    all_datasets = []
-    for key, solution in best_solutions.items():
-        collections = []
-        for item in solution:
-            collection = {'chunks': [], 'collection_text': None}
-            for chunk_dict in item['chunks']:
-                collection['chunks'].append({'chunk_dict': chunk_dict, 'chunk_text': None})
-            collections.append(collection)
-        all_datasets.append({'content_title': key, 'collections': collections})
-    
     # Generate visualizations for best solutions
-    for dataset in all_datasets:
-        fig = plot_collection_distribution(dataset, 'word')
-        save_figure(fig, f"solution_plot_{dataset['content_title']}", 
+    for key, solution in best_solutions.items():
+        fig, _ = solution.visualize_solution(show=False)
+        save_figure(fig, f"solution_plot_{key}", 
             solution_viz_path, VISUALIZATION_FORMATS)
 
 def create_convergence_plots(best_runs: Dict[str, Any], output_path: str):
@@ -517,28 +524,34 @@ def create_convergence_plots(best_runs: Dict[str, Any], output_path: str):
         temp = [d['temperature'] for d in iterations_data]
         
         # Create figure with two y-axes
-        fig, ax1 = plt.subplots(1, 1, figsize=(12, 6))
+        fig, ax1 = plt.subplots(1, 1, figsize=(9, 3))
         
         # First y-axis for costs
-        ax1.plot(iterations, costs, label='Current Cost', color='blue', alpha=0.7)
-        ax1.plot(iterations, best_costs, label='Best Cost', color='green', alpha=0.7)
+        ax1.plot(iterations, costs, label='Current Cost', color='blue', alpha=0.3)
+        ax1.plot(iterations, best_costs, label='Best Cost', color='green', alpha=0.7, linestyle='--')
         ax1.set_xlabel("Iteration")
         ax1.set_ylabel("Cost", color='blue')
         ax1.tick_params(axis='y', labelcolor='blue')
+        ax1.grid(axis='y', linestyle='--', alpha=0.2, color='grey')
+        
+        ax1.set_xlim(0, 10000)
+        ax1.set_ylim(0, max(costs) * 1.1)
         
         # Second y-axis for temperature
         ax2 = ax1.twinx()
-        ax2.plot(iterations, temp, label='Temperature', color='red', linestyle='--')
+        ax2.plot(iterations, temp, label='Temperature', color='red', linestyle=':')
         ax2.set_ylabel("Temperature", color='red')
         ax2.tick_params(axis='y', labelcolor='red')
         
         # Title and legend
-        ax1.set_title(f"Convergence Plot: {key}")
+        # ax1.set_title(f"Convergence Plot: {key}")
         
         # Combined legend
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', 
+                frameon=True, facecolor='white', edgecolor='gray', framealpha=0.8,
+                title="Best out of 5 runs")
         
         # Save figure
         save_figure(fig, f"convergence_plot_{key}", convergence_viz_path, VISUALIZATION_FORMATS)
@@ -570,7 +583,7 @@ def export_results(summary_df: pd.DataFrame,
                 compact = {"config_str": get_configuration_name(result['config'])}
                     
                 # Create a copy without the iteration structure
-                compact.update({k: v for k, v in result.items() if k != 'iterations_data'})
+                compact.update({k: v for k, v in result.items() if k != 'iterations_data' and k != 'solution'})
                 compact_results.append(compact)
                 
             json_path = os.path.join(output_path, "evaluation_results.json")
@@ -606,7 +619,6 @@ def main():
     # Save configuration parameters
     config_summary = {
         "initial_solution_methods": INITIAL_SOLUTION_METHODS,
-        "cost_functions": COST_FUNCTIONS,
         "move_selectors": MOVE_SELECTORS,
         "cooling_rates": COOLING_RATES,
         "num_runs_per_config": NUM_RUNS_PER_CONFIG,

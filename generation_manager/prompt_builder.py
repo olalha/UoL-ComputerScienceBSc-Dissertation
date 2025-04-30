@@ -8,7 +8,7 @@ from typing import Optional
 from jinja2 import Environment, FileSystemLoader, TemplateError, UndefinedError, StrictUndefined
 
 # Set up Jinja2 environment
-with resources.path('prompt_manager', 'prompts') as prompts_path:
+with resources.path('generation_manager', 'prompts') as prompts_path:
     env = Environment(
         loader=FileSystemLoader(prompts_path),
         undefined=StrictUndefined,
