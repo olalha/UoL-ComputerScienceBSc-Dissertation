@@ -24,7 +24,6 @@ rulebook_page = st.Page(
     title="Rulebooks",
     icon="📚"
 )
-
 dataset_page = st.Page(
     page="views/dataset_page.py",
     title="Datasets",

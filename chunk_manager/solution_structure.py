@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
 
 class SolutionStructure:
@@ -11,6 +10,11 @@ class SolutionStructure:
     - Collections of chunks with no duplicate topics
     - Size ranges and their target proportions
     - Distribution of collections across size ranges
+    
+    The efficiency of this structure is achieved through:
+    - Efficient tracking of size ranges and proportions
+    - Fast insertion and removal of chunks from collections
+    - Sorted access to chunks within collections
     """
     
     def __init__(self, size_ranges, target_proportions, mode="word"):

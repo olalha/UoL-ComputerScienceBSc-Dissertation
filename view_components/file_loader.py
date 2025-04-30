@@ -1,5 +1,13 @@
+"""
+This module provides functions to handle JSON file operations within the application.
+
+It includes loading, validating, and saving JSON files for rulebooks and datasets.
+The functions ensure that the files are correctly formatted and contain valid data.
+All files are stored in consistent directories, and the module handles file naming 
+conflicts by renaming files if necessary.
+"""
+
 import streamlit as st
-import os
 import json
 import tempfile
 import io
@@ -38,10 +46,9 @@ def _handle_json_operation(operation_fn: Callable, validation_fn: Callable, *arg
         *args: Arguments to pass to the operation function
     
     Returns:
-        Tuple containing:
-        - Success status (bool)
-        - JSON data if successful, None otherwise
-        - Captured output for error reporting
+        Success status (bool)
+        JSON data if successful, None otherwise
+        Captured output for error reporting
     """
     captured_output = io.StringIO()
     try:
@@ -70,6 +77,7 @@ def load_and_validate_json(file_path: Union[str, Path], validation_function: Cal
         
     Returns:
         Validated JSON data as a dictionary or None if invalid
+        Output string for error reporting
     """
     # Convert to Path object if it's a string
     path = Path(file_path)
@@ -95,6 +103,7 @@ def validate_and_save_json(file_path: Union[str, Path], json_data: dict, validat
         
     Returns:
         Path object if validation and saving succeeded, None otherwise
+        Output string for error reporting
     """
     # Convert to Path object if it's a string
     path = Path(file_path)
@@ -162,7 +171,6 @@ def initialize_file_cache() -> None:
             valid_files = [filename for filename, is_valid in validation_results.items() if is_valid]
             st.session_state[f"{state_key}_valid_files"] = valid_files
 
-
 def load_and_validate_rulebook(file_name: str) -> Tuple[Optional[Dict], str]:
     """ Load and validate a rulebook JSON file by name. """
     return load_and_validate_json(RB_JSON_DIR / file_name, validate_rulebook_values)
@@ -180,7 +188,16 @@ def validate_and_save_dataset(file_name: str, dataset: dict, overwrite: bool = F
     return validate_and_save_json(DS_JSON_DIR / file_name, dataset, validate_dataset_values, overwrite)
 
 def process_rulebook_upload(uploaded_file: Any) -> Tuple[Optional[Path], str]:
-    """ Process uploaded rulebook file and convert to JSON format. """
+    """ 
+    Process uploaded rulebook file and convert to JSON format. 
+    
+    Args:
+        uploaded_file: The uploaded file object (Excel or JSON)
+        
+    Returns:
+        Path to the saved JSON file if successful, None otherwise
+        Captured output for error reporting
+    """
     file_extension = Path(uploaded_file.name).suffix.lower()
     
     # Save uploaded file to a temporary location

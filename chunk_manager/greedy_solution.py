@@ -1,24 +1,38 @@
+"""
+Greedy solution for chunk allocation.
+
+This module provides a greedy algorithm to generate an initial solution
+for chunk collection allocation. It estimates the number of collections needed
+for each size range based on target proportions and chunk sizes, then allocates chunks
+to collections in a way that aims to match the target distribution.
+"""  
+
 from collections import defaultdict
 from chunk_manager.solution_structure import SolutionStructure
+from typing import List, Tuple, Dict, Any
 
-def create_greedy_initial_solution(chunks, size_ranges, target_proportions, mode, fill_factor):
+def create_greedy_initial_solution(
+    chunks: List[Tuple[str, str, int]],
+    size_ranges: List[List[int]],
+    target_proportions: List[float],
+    mode: str,
+    fill_factor: float) -> SolutionStructure | None:
     """
-    Creates an initial solution using a greedy algorithm.
-    
-    This function implements a greedy approach to allocate chunks to collections,
-    prioritizing topic grouping while adhering to size constraints. It first estimates
-    the number of collections needed for each size range, then allocates chunks
-    in order of topic frequency.
-    
+    Creates an initial solution using a greedy allocation algorithm.
+
+    This function estimates the number of collections needed for each size range,
+    sorts the chunks by topic frequency and size, and then greedily allocates them
+    to collections to approximate the target size distribution.
+
     Args:
-        chunks (list): List of chunks, each as (topic: str, sentiment: str, word_count: int)
-        size_ranges (list): List of [min_size, max_size] for each size range
-        target_proportions (list): List of desired proportions for each size range
+        chunks (List[Tuple[str, str, int]]): List of chunks, each as (topic, sentiment, word_count)
+        size_ranges (List[List[int]]): List of [min_size, max_size] for each size range
+        target_proportions (List[float]): Desired proportions for each size range
         mode (str): 'word' or 'chunk' to determine size measurement
         fill_factor (float): Factor to estimate average collection size within ranges
-    
+
     Returns:
-        SolutionStructure: Initial solution structure with allocated chunks
+        SolutionStructure | None: Initial solution structure with allocated chunks, or None if parameters are invalid
     """
     valid_params = check_greedy_solution_params(chunks, size_ranges, target_proportions, mode, fill_factor)
     if not valid_params:
@@ -56,23 +70,27 @@ def create_greedy_initial_solution(chunks, size_ranges, target_proportions, mode
     
     return solution
 
-def estimate_collection_counts(chunks, size_ranges, target_proportions, mode, fill_factor):
+def estimate_collection_counts(
+    chunks: List[Tuple[str, str, int]],
+    size_ranges: List[List[int]],
+    target_proportions: List[float],
+    mode: str,
+    fill_factor: float) -> Dict[int, int]:
     """
     Estimates the number of collections needed for each size range.
-    
-    This function calculates how many collections should be created for each size range
-    to meet the target proportions. It uses the fill factor to estimate the expected
-    average size of collections within each range.
-    
+
+    For each size range, this function estimates the average collection size using the fill_factor,
+    then determines how many collections are needed to meet the target proportions of the total size.
+
     Args:
-        chunks (list): List of chunks to allocate
-        size_ranges (list): List of [min_size, max_size] for each size range
-        target_proportions (list): List of desired proportions for each size range
+        chunks (List[Tuple[str, str, int]]): List of chunks to allocate
+        size_ranges (List[List[int]]): List of [min_size, max_size] for each size range
+        target_proportions (List[float]): Desired proportions for each size range
         mode (str): 'word' or 'chunk' to determine size measurement
         fill_factor (float): Factor to estimate average collection size within ranges
         
     Returns:
-        dict: Mapping of size range index to estimated number of collections
+        Dict[int, int]: Mapping of size range index to estimated number of collections
     """
     total_size = sum(chunk[2] if mode == "word" else 1 for chunk in chunks)
     
@@ -91,19 +109,18 @@ def estimate_collection_counts(chunks, size_ranges, target_proportions, mode, fi
     
     return estimated_collections
 
-def sort_chunks(chunks):
+def sort_chunks(chunks: List[Tuple[str, str, int]]) -> List[Tuple[str, str, int]]:
     """
     Sorts chunks by topic frequency (descending) and then by size (descending).
-    
-    This ordering prioritizes topics that appear frequently to encourage grouping
-    similar topics together, and within same topics, prioritizes larger chunks
-    for more efficient allocation.
-    
+
+    Chunks with more frequent topics are prioritized, and within the same topic,
+    larger chunks are placed first to improve allocation efficiency.
+
     Args:
-        chunks (list): List of chunks to sort
-    
+        chunks (List[Tuple[str, str, int]]): List of chunks to sort
+
     Returns:
-        list: Sorted list of chunks by topic frequency and size
+        List[Tuple[str, str, int]]: Sorted list of chunks by topic frequency and size
     """
     # Count topic frequencies in a single pass
     topic_counts = defaultdict(int)
@@ -116,21 +133,25 @@ def sort_chunks(chunks):
     
     return sorted_chunks
 
-def allocate_chunks(solution, sorted_chunks, estimated_collections, size_ranges, mode):
+def allocate_chunks(
+    solution: SolutionStructure,
+    sorted_chunks: List[Tuple[str, str, int]],
+    estimated_collections: Dict[int, int],
+    size_ranges: List[List[int]],
+    mode: str) -> None:
     """
-    Allocates chunks to collections using the greedy algorithm.
-    
-    This function implements the main greedy allocation strategy:
-    1. First chunks of the most frequent topic are placed in separate collections
-    2. Subsequent chunks are placed in existing collections when possible
-    3. New collections are created when needed
-    4. The algorithm tracks allocations to meet the target distribution
-    
+    Allocates chunks to collections using a greedy approach.
+
+    The allocation proceeds as follows:
+    - Chunks of the most frequent topic are placed in separate collections.
+    - Remaining chunks are added to existing collections if possible, otherwise new collections are created.
+    - The allocation aims to match the estimated number of collections per size range.
+
     Args:
         solution (SolutionStructure): Solution structure to add chunks to
-        sorted_chunks (list): Sorted list of chunks to allocate 
-        estimated_collections (dict): Estimated number of collections per size range
-        size_ranges (list): List of [min_size, max_size] for each size range
+        sorted_chunks (List[Tuple[str, str, int]]): Sorted list of chunks to allocate 
+        estimated_collections (Dict[int, int]): Estimated number of collections per size range
+        size_ranges (List[List[int]]): List of [min_size, max_size] for each size range
         mode (str): 'word' or 'chunk' to determine size measurement
     """
     if not sorted_chunks:
@@ -147,15 +168,13 @@ def allocate_chunks(solution, sorted_chunks, estimated_collections, size_ranges,
         return
     first_topic = current_chunk[0]
     
-    # Process chunks with first_topic - these must go in separate collections
-    # as there's no other solution for the most common topic
+    # Place all chunks of the most frequent topic in separate collections
     while current_chunk is not None and current_chunk[0] == first_topic:
-        # Create a new collection for chunk of this topic
         new_collection_idx = solution.create_new_collection()
         solution.add_chunks_to_collection(new_collection_idx, [current_chunk])
         current_chunk = next(chunk_iter, None)
     
-    # Subsequent batch allocation - process remaining chunks
+    # Allocate remaining chunks
     while current_chunk is not None:
         added = False
         current_collections = solution.get_active_collection_indices()
@@ -176,7 +195,6 @@ def allocate_chunks(solution, sorted_chunks, estimated_collections, size_ranges,
         
         # If not added to existing collection based on size constraints
         if not added:
-            
             # Calculate the cost of adding to each eligible collection or creating a new one
             best_cost = float('inf')
             best_collection_idx = None
@@ -197,10 +215,10 @@ def allocate_chunks(solution, sorted_chunks, estimated_collections, size_ranges,
             
             # Compare costs and decide whether to keep the new collection or not
             if solution.get_collection_range_idx(best_collection_idx) == len(size_ranges) - 1:
-                # If the best collection is already out of range so we keep the new collection
+                # If the best collection is already out of range, keep the new collection
                 final_collection_idx = new_collection_idx
             elif new_cost < best_cost:
-                # If the new collection is better keep it
+                # If the new collection is better, keep it
                 final_collection_idx = new_collection_idx
             else:
                 # Otherwise, keep the best collection
@@ -218,21 +236,26 @@ def allocate_chunks(solution, sorted_chunks, estimated_collections, size_ranges,
         # Get the next chunk
         current_chunk = next(chunk_iter, None)
 
-def can_add_to_collection(solution, collection_idx, chunk, size_ranges, current_max_range, mode):
+def can_add_to_collection(
+    solution: SolutionStructure,
+    collection_idx: int,
+    chunk: Tuple[str, str, int],
+    size_ranges: List[List[int]],
+    current_max_range: int,
+    mode: str) -> bool:
     """
     Checks if a chunk can be added to a collection without exceeding the current max size range.
-    
-    This function enforces the constraint that we should generally not allow collections
-    to grow beyond the current target range, ensuring we maintain the desired size distribution.
-    
+
+    Ensures that adding the chunk will not move the collection outside the allowed size range.
+
     Args:
         solution (SolutionStructure): The current solution
         collection_idx (int): Index of the collection to check
-        chunk (tuple): The chunk to potentially add
-        size_ranges (list): List of [min_size, max_size] for each size range
+        chunk (Tuple[str, str, int]): The chunk to potentially add
+        size_ranges (List[List[int]]): List of [min_size, max_size] for each size range
         current_max_range (int): Maximum allowed size range index
         mode (str): 'word' or 'chunk' to determine size measurement
-    
+
     Returns:
         bool: True if the chunk can be added, False otherwise
     """
@@ -252,18 +275,21 @@ def can_add_to_collection(solution, collection_idx, chunk, size_ranges, current_
     
     return False
 
-def next_valid_range(allocated_collections, estimated_collections, current_max_range):
+def next_valid_range(
+    allocated_collections: Dict[int, int],
+    estimated_collections: Dict[int, int],
+    current_max_range: int) -> int:
     """
     Finds the next valid size range to fill.
-    
+
     When a size range has met its target number of collections, this function
     finds the next largest size range that still needs collections.
-    
+
     Args:
-        allocated_collections (dict): Number of collections allocated to each range
-        estimated_collections (dict): Target number of collections for each range
+        allocated_collections (Dict[int, int]): Number of collections allocated to each range
+        estimated_collections (Dict[int, int]): Target number of collections for each range
         current_max_range (int): Current maximum size range index
-    
+
     Returns:
         int: Index of the next valid range, or -1 if no more valid ranges
     """
@@ -272,9 +298,21 @@ def next_valid_range(allocated_collections, estimated_collections, current_max_r
             return range_idx
     return -1  # No more valid ranges
 
-def check_greedy_solution_params(chunks, size_ranges, target_proportions, mode, fill_factor):
+def check_greedy_solution_params(
+    chunks: List[Tuple[str, str, int]],
+    size_ranges: List[List[int]],
+    target_proportions: List[float],
+    mode: str,
+    fill_factor: float) -> bool:
     """
     Validates the parameters for create_greedy_initial_solution.
+
+    Args:
+        chunks (List[Tuple[str, str, int]]): List of chunks
+        size_ranges (List[List[int]]): List of [min_size, max_size] pairs
+        target_proportions (List[float]): List of proportions for each size range
+        mode (str): 'word' or 'chunk'
+        fill_factor (float): Fill factor between 0 and 1
 
     Returns:
         bool: True if all parameters are valid, False otherwise.

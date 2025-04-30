@@ -1,3 +1,15 @@
+"""
+Dataset page for the Streamlit application.
+
+This page allows users to manage datasets, including generating dataset structures from rulebooks.
+When selecting a dataset, users can:
+- View dataset metrics and visualizations
+- View and filter all collections in a table
+- View specific collections and genertate text for them
+- Generate text for all collections at once
+- Export the dataset text to a TXT or JSON file
+"""
+
 import io
 import contextlib
 import streamlit as st
@@ -240,12 +252,7 @@ def display_dataset_metrics(dataset: Dict[str, Any]) -> None:
             st.error("Rulebook file name not found in dataset.")
 
 def display_collections_table(dataset: Dict[str, Any]) -> None:
-    """
-    Display a table of collections with advanced filtering.
-    
-    Args:
-        dataset: The dataset JSON object
-    """
+    """ Display a table of collections with advanced filtering. """
 
     st.subheader("Collections")
     collections = dataset.get("collections", [])
@@ -460,12 +467,7 @@ def display_collections_table(dataset: Dict[str, Any]) -> None:
     )
 
 def display_collection_veiwer(dataset: Dict[str, Any]) -> None:
-    """
-    Display text generation interface for a selected collection.
-    
-    Args:
-        dataset: The dataset JSON object
-    """
+    """ Display text generation interface for a selected collection. """
     
     content_title = dataset.get("content_title", "No Title")
     
@@ -666,12 +668,7 @@ def display_collection_veiwer(dataset: Dict[str, Any]) -> None:
                 st.markdown("No text available for this chunk.")
 
 def display_text_generator(dataset: Dict[str, Any]) -> None:
-    """
-    Display interface for generating text for all collections at once.
-    
-    Args:
-        dataset: The dataset JSON object
-    """
+    """ Display interface for generating text for all collections at once. """
     
     # Display success or failure message from previous run if any
     if 'failed_generations_count' in st.session_state:
@@ -829,12 +826,8 @@ def display_text_generator(dataset: Dict[str, Any]) -> None:
             st.rerun()
 
 def display_export_options(dataset: Dict[str, Any]) -> None:
-    """
-    Display options for exporting the dataset in different formats.
+    """  Display options for exporting the dataset in different formats. """
     
-    Args:
-        dataset: The dataset JSON object
-    """
     st.subheader("Export Dataset")
     
     # Content title for default filenames

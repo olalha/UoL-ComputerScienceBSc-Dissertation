@@ -1,8 +1,16 @@
-import asyncio
+"""
+Text generation functions for collection using the API handler.
 
-from typing import Optional, List, Dict
+This module contains functions to generate text for collections using
+two didferent approaches: multi-prompt and single-prompt.
+
+It renders prompts using Jinja2 templates, handles the API calls and
+processes the responses. It also includes error graceful handling.
+"""
+
+from typing import List
 from generation_manager.prompt_builder import render_prompt
-from generation_manager.api_handler import prompt_openai_llm_parallel, prompt_openai_llm_single
+from generation_manager.api_handler import prompt_openai_llm_parallel
 
 async def generate_collection_texts_multi_prompt(
     all_collections: List[dict], 

@@ -1,3 +1,26 @@
+"""
+Simulated Annealing Optimization for initial solution improvement.
+
+This module implements a simulated annealing algorithm to optimize the distribution
+of collections across the specified size ranges in a given solution. The algorithm 
+iteratively explores the solution space by applying random moves to the collections
+and accepting or rejecting them based on a cost function and a temperature parameter.
+
+The target number of collections for each size range is dynamically calculated based on the
+current number of collections and the size ranges defined in the solution at any given time.
+
+For the context of this module, the following terms are defined:
+
+Overpopulation:
+    A size range is considered overpopulated if the number of collections in that range 
+    is greater than the target number of collections for that range. The heurististics will
+    attempt to move collections out of overpopulated ranges to underpopulated ranges.
+Underpopulation:
+    A size range is considered underpopulated if the number of collections in that range
+    is less than the target number of collections for that range. The heuristics will
+    attempt to move collections into underpopulated ranges from overpopulated ranges.
+"""
+
 import random
 import math
 import copy
@@ -12,13 +35,15 @@ COOLING_RATE = get_setting("SIMULATED_ANNEALING", "cooling_rate")
 
 # Penalty factor for out-of-range collections
 #   Factor to apply to the deviation of collections 
-#   that are out of range as temperature decreases
+#   that are out of range to increase the cost of bad solutions.
 OOR_PENALTY_FACTOR = get_setting("SIMULATED_ANNEALING", "oor_penalty_factor")
 
 # Selection bias for chunk selection
-# = 0.0: uniform selection
-# = 1.0: linear weighting
-# > 1.0: exponential weighting
+#   This parameter controls the strength of the heuristic bias
+#   towards strategic collections when selecting chunks to move.
+#       = 0.0: uniform selection
+#       = 1.0: linear weighting
+#       > 1.0: exponential weighting
 SELECTION_BIAS = get_setting("SIMULATED_ANNEALING", "selection_bias")
 
 def optimize_collections_with_simulated_annealing(
@@ -185,8 +210,8 @@ def transfer_chunk(solution, overpopulated, underpopulated, selection_bias):
     Transfer chunks from a collection in an overpopulated range to move it to an underpopulated range.
     
     Strategy:
-    1. Remove smallest chunks until the collection falls into an underpopulated range
-    2. Optimally redistribute removed chunks to collections in underpopulated ranges
+    1. Remove smallest chunks until the collection falls into an underpopulated range.
+    2. Optimally redistribute removed chunks to collections in underpopulated ranges.
     """
     # Get overpopulated size ranges
     range_indices = [idx for idx, _ in overpopulated]
@@ -327,9 +352,9 @@ def swap_chunks(solution, overpopulated, underpopulated, selection_bias):
     Swap chunks between collections to move them toward target ranges.
     
     Strategy:
-    1. If overpopulated range is smaller than underpopulated: swap small chunks with large
-    2. If overpopulated range is larger: swap large chunks with small
-    3. Only confirm swap if it moves at least one collection to a better range
+    1. If overpopulated range is smaller than underpopulated: swap small chunks with large.
+    2. If overpopulated range is larger: swap large chunks with small.
+    3. Only confirm swap if it moves at least one collection to a better range.
     """
     # Select overpopulated size ranges
     over_range_indices = [idx for idx, _ in overpopulated]
@@ -446,6 +471,11 @@ def swap_chunks(solution, overpopulated, underpopulated, selection_bias):
 def split_collection(solution, overpopulated, underpopulated, selection_bias):
     """
     Split a collection from an overpopulated range to create collections in underpopulated ranges.
+    
+    Strategy:
+    1. Select a collection from an overpopulated range.
+    2. Consider the cost of all split points.
+    3. Choose a split point that yeilds the best potential cost reduction.
     """
     # Select overpopulated size ranges
     range_indices = [idx for idx, _ in overpopulated]
@@ -565,8 +595,9 @@ def split_collection(solution, overpopulated, underpopulated, selection_bias):
     return True, move_info
 
 def revert_move(solution, move_info):
-    """
-    Revert a move that was rejected.
+    """   
+    Accepts the solution object and the move information.
+    Revests the changes outlined in the move_info within the solution.
     """
     if not move_info:
         return
@@ -600,7 +631,6 @@ def revert_move(solution, move_info):
                 solution.remove_collection(coll_idx)
     
     elif move_type == "swap":
-        
         # Revert a chunk swap
         chunk1 = move_info["chunk1"]
         collection1 = move_info["collection1"]
@@ -616,7 +646,6 @@ def revert_move(solution, move_info):
             
             solution.add_chunks_to_collection(collection1, [chunk1_data])
             solution.add_chunks_to_collection(collection2, [chunk2_data])
-
     
     elif move_type == "split":
         # Revert a collection split

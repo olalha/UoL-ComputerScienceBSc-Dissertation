@@ -1,7 +1,16 @@
+"""
+Module to handle the selection, deletion, and renaming of items in a given directory.
+
+This is a custom Streamlit component that allows users to manage files in a specific directory.
+Any changes made are reflected in the session state, allowing for a dynamic user experience.
+The component is dynamic and can handle different types of items (e.g., rulebooks, datasets) 
+based on the provided item type.
+"""
+
 import os
 import streamlit as st
 from pathlib import Path
-from typing import List, Union, Optional
+from typing import List, Optional
 
 from view_components.file_loader import FILE_DIRS
 

@@ -1,6 +1,8 @@
 """
 This module provides functionality for rendering prompts using Jinja2 templates.
+
 It sets up a Jinja2 environment and offers a function to render templates with given context.
+Errors during rendering are handled gracefully, and a function to list available templates is also provided.
 """
 
 from importlib import resources

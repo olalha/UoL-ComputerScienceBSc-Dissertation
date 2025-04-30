@@ -1,7 +1,8 @@
 """
 This module is responsible for loading and managing the application settings
-from a YAML configuration file. It ensures that the settings variables are
-available and accessed safely.
+
+It ensures that the settings variables are available and accessed safely, 
+from a YAML configuration file. 
 """
 
 import yaml

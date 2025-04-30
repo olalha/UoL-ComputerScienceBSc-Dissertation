@@ -1,6 +1,12 @@
 """
 This module provides functions for making API requests to OpenAI.
-It includes utilities for sending requests and handling responses.
+
+It includes functions for sending requests, validating responses,
+and handling errors. The module uses the `aiohttp` library for asynchronous HTTP requests.
+It also includes logging for debugging and error handling.
+
+This module is designed to work with the OpenAI API and requires an API key to be set in the environment variables.
+However, the code can be adapted to work with other APIs by modifying the request URL and headers.
 """
 
 import asyncio

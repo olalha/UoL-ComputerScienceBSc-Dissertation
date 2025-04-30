@@ -1,3 +1,10 @@
+"""
+Module for creating and validating dataset structures from rulebooks.
+
+This module provides functions to create a structured dataset from a rulebook, 
+validate the dataset structure, and ensure that all required specifications are met.
+"""
+
 from typing import Optional
 
 from utils.settings_manager import get_setting
@@ -14,11 +21,18 @@ def create_dataset_structure(
     Creates a structured dataset from a rulebook.
 
     The function validates the rulebook, generates chunks, allocates them to collections
-    according to the rulebook specifications, and builds a complete dataset structure with
-    metadata.
+    according to the rulebook specifications, and builds a complete dataset structure.
+    
+    It performs the following steps:
+        1. Validates the rulebook values.
+        2. Generates chunks based on the rulebook.
+        3. Creates a greedy initial solution for chunk allocation.
+        4. Optimizes the solution using simulated annealing.
+        5. Constructs the dataset structure with collections and chunks.
 
     Args:
-        rulebook (dict): The rulebook containing dataset parameters and constraints.
+        rulebook_data (dict): The rulebook containing dataset parameters and constraints.
+        rulebook_file_name (str): The name of the rulebook file.
         max_iterations (int): The maximum number of iterations for the optimization algorithm.
 
     Returns:

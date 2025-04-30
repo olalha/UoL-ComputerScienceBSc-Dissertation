@@ -1,8 +1,20 @@
-import json
-import os
+"""
+Rulebook Generator Module
+
+This module generates a rulebook for testing purposes with customizable characteristics.
+It allows for the generation of content rules and collection ranges based on various parameters.
+
+WARNING: 
+This module is designed for testing purposes only and should not be used for production.
+It is not intended for use in any real-world applications or scenarios.
+"""
+
 import random
+import time
 import numpy as np
 from typing import List, Dict, Optional
+
+from view_components.file_loader import validate_and_save_rulebook
 
 # Constants for all hard-coded values
 DECIMAL_PLACES = 2
@@ -136,8 +148,6 @@ def generate_rulebook(
     }
     
     # Save the rulebook to a JSON file
-    from view_components.file_loader import validate_and_save_rulebook
-    import time
     formatted_time = time.strftime("%Y-%m-%d %H-%M-%S", time.localtime())
     rulebook_name = "Generated Rulebook - " + formatted_time + ".json"
     validate_and_save_rulebook(rulebook_name, rulebook, overwrite=True)

@@ -1,3 +1,11 @@
+""" 
+Rulebook Page for Streamlit Application.
+
+This page allows users to upload, view, and manage rulebooks in a 
+user-friendly interface.It includes features for file upload, selection
+from saved files, and displaying rulebook data in a structured format.
+"""
+
 import streamlit as st
 import pandas as pd
 

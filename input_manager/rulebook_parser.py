@@ -1,5 +1,14 @@
+"""
+Module for parsing an Excel workbook defining the characteristics of a text corpus.
+
+The Excel workbook must contain two sheets:
+1. "MAIN" - Contains the main parameters and rules for the text corpus.
+2. "COLLECTION_RANGES" - Contains the ranges for collection with their target fractions.
+
+There are functions to parse the Excel file, validate the data, and convert it into a structured format.
+"""
+
 import openpyxl
-import json
 from pathlib import Path
 from typing import Optional
 
@@ -20,13 +29,13 @@ def parse_rulebook_excel(file_path: Path) -> Optional[dict]:
                 * Columns C-E: sentiment_proportion (three numbers that sum to 1)
                 * Column H: chunk_min_wc (integer > 0)
                 * Column I: chunk_max_wc (integer greater than chunk_min_wc)
-                * Column J: chunk_pref (preferred number based on collection_mode)
+                * Column J: chunk_pref (preferred number of chunks/words for each topic - based on collection_mode)
                 * Column K: chunk_wc_distribution (optional, with a default if not provided)
       - A "COLLECTION_RANGES" sheet containing:
           - Ranges defined with start, end, and target_fraction (with contiguous ranges and sum of target_fraction equal to 1)
     
     After extracting and mapping the values, the function validates the data using a shared helper.
-    If validation passes, the rulebook is written to a JSON file in the "_data/rulebooks/json" directory.
+    If validation passes, the rulebook is written to a JSON file in saved in an appropriate directory.
 
     Args:
         file_path (Path): Full path to the Excel workbook.
@@ -189,22 +198,6 @@ def parse_rulebook_excel(file_path: Path) -> Optional[dict]:
 def validate_rulebook_values(rulebook: dict) -> bool:
     """
     Validates a rulebook dictionary to ensure it conforms to the expected structure and value constraints.
-
-    The rulebook dictionary must include the following keys:
-      - content_title: a string
-      - collection_mode: either "word" or "chunk"
-      - total: an integer greater than 0
-      - content_rules: a dictionary mapping topic names to a dictionary with keys:
-            - total_proportion: a number between 0 and 1
-            - sentiment_proportion: a list or tuple of three numbers (each between 0 and 1) that sum to 1
-            - chunk_min_wc: an integer greater than 0
-            - chunk_max_wc: an integer greater than chunk_min_wc
-            - chunk_pref: a number between 0 and 1
-            - chunk_wc_distribution: a positive number (validated as a number > 0)
-      - collection_ranges: a list of dictionaries, each containing:
-            - range: a list or tuple of two integers [start, end] where end >= start and for each subsequent range,
-              the start value must equal the previous end + 1.
-            - target_fraction: a number, and the sum of these target fractions must equal 1.
 
     Args:
         rulebook (dict): A dictionary representing the rulebook extracted from Excel or JSON.

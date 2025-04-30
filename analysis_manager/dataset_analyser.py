@@ -37,6 +37,7 @@ def get_basic_counts(dataset: Dict[str, Any]) -> Dict[str, int]:
         "collections_count": len(collections)
     }
 
+
 def get_text_presence_percentages(dataset: Dict[str, Any]) -> Dict[str, float]:
     """
     Calculate the percentage of chunks and collections that have text.

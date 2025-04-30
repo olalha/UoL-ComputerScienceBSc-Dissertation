@@ -1,8 +1,17 @@
+"""
+Module for visualizing dataset sentiment distributions and metrics.
+
+This module provides functions to create various types of plots, including
+pie charts, bar charts, and box plots, to visualize distributions in datasets.
+It also includes functions to preprocess datasets by removing text content to
+help with caching and performance optimization.
+"""
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from copy import deepcopy
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 from analysis_manager.dataset_analyser import (
     get_collection_sentiment_data,

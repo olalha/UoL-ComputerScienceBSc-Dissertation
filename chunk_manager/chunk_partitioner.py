@@ -1,3 +1,12 @@
+"""
+Chunk partitioning functions for the chunk manager.
+
+This module contains functions to partition a total word count into chunks,
+ensuring that each chunk adheres to specified minimum and maximum word counts. 
+The distribution of extra words among the chunks is done using a Dirichlet 
+distribution, allowing for a more natural allocation of words across the chunks.
+"""
+
 import math
 import random
 from typing import Optional, List
@@ -44,11 +53,12 @@ def _allocate_extras(num_chunks: int, R: int, extra_max: int, dirichlet_a: float
         
     return extras
 
-def split_wc_into_chunks(total_wc: int, 
-                           min_wc: int, 
-                           max_wc: int, 
-                           chunk_count_pref: float = 0.5, 
-                           dirichlet_a: float = 5.0) -> Optional[List[int]]:
+def split_wc_into_chunks(
+    total_wc: int, 
+    min_wc: int, 
+    max_wc: int, 
+    chunk_count_pref: float = 0.5, 
+    dirichlet_a: float = 5.0) -> Optional[List[int]]:
     """
     Split a total word count into chunks, with each chunk receiving a word count between min_wc and max_wc.
     
@@ -104,11 +114,12 @@ def split_wc_into_chunks(total_wc: int,
     chunks = [base_allocation[i] + extras[i] for i in range(chosen_chunks)]
     return chunks
 
-def allocate_wc_to_chunks(num_chunks: int, 
-                            min_wc: int, 
-                            max_wc: int, 
-                            chunk_size_pref: float = 0.5,
-                            dirichlet_a: float = 5.0) -> Optional[List[int]]:
+def allocate_wc_to_chunks(
+    num_chunks: int, 
+    min_wc: int, 
+    max_wc: int, 
+    chunk_size_pref: float = 0.5,
+    dirichlet_a: float = 5.0) -> Optional[List[int]]:
     """
     Allocate word counts to a fixed number of chunks, ensuring each chunk receives between min_wc and max_wc words.
     
@@ -153,8 +164,28 @@ def allocate_wc_to_chunks(num_chunks: int,
     return chunks
 
 def get_chunks(rulebook: dict) -> Optional[List[dict]]:
-
-    # Generate chunks
+    """
+    Generate chunks based on the provided rulebook.
+    
+    This function takes a rulebook dictionary that specifies the total word count,
+    collection mode, and content rules for different topics and sentiments. It generates
+    a list of chunks, each represented as a dictionary containing the topic name,
+    sentiment, and word count.
+    
+    Args:
+        rulebook (dict): A dictionary containing the rulebook information, including:
+            - 'total': Total word count to be partitioned.
+            - 'collection_mode': Mode of collection ('word' or 'chunk').
+            - 'content_rules': A dictionary of content rules for each topic, including:
+                - 'total_proportion': Proportion of total word count for the topic.
+                - 'sentiment_proportion': List of proportions for positive, neutral, and negative sentiments.
+                - 'chunk_min_wc': Minimum word count per chunk.
+                - 'chunk_max_wc': Maximum word count per chunk.
+                - 'chunk_pref': Preference for chunk size distribution.
+                - 'chunk_wc_distribution': Dirichlet concentration parameter for chunk size distribution.
+    Returns:
+        Optional[List[dict]]: A list of dictionaries representing the generated chunks, or None if partitioning fails.
+    """
     all_chunks_dicts = []
     TOTAL = rulebook['total']
     MODE = rulebook['collection_mode']
