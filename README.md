@@ -21,7 +21,7 @@ Watching this video can provide a quick overview before setting up and running t
 
 ## Key Terminology
 
-*   **Rulebook:** The input specification defining the desired dataset characteristics. It's typically created using an Excel template (parsed by [`input_manager/rulebook_parser.py`](c:\Code\individual-project-olalha\input_manager\rulebook_parser.py)) and represented internally as a JSON object. It dictates the overall size, content title, collection mode (word/chunk count), topics, sentiment proportions per topic, chunk size constraints, and target distribution for collection sizes (`collection_ranges`). These are stored in two seperate sheets within the Excel workbook. Templates are availible within the repository.
+*   **Rulebook:** The input specification defining the desired dataset characteristics. It's typically created using an Excel template (parsed by `input_manager/rulebook_parser.py`) and represented internally as a JSON object. It dictates the overall size, content title, collection mode (word/chunk count), topics, sentiment proportions per topic, chunk size constraints, and target distribution for collection sizes (`collection_ranges`). These are stored in two separate sheets within the Excel workbook. Templates are available within the repository.
 
 *   **Chunk:** The smallest atomic unit of text generated. Each chunk focuses on a single topic and sentiment, adhering to a specific word count range defined in the rulebook's content rules.
 
@@ -37,52 +37,52 @@ Watching this video can provide a quick overview before setting up and running t
 
 *   **Modular Pipeline:** Clear separation of concerns: Input Parsing -> Chunking & Optimization -> Text Generation -> Analysis.
 
-*   **Chunk Partitioning:** Divides overall requirements into discrete chunks based on rulebook constraints ([`chunk_manager/chunk_partitioner.py`](c:\Code\individual-project-olalha\chunk_manager\chunk_partitioner.py)).
+*   **Chunk Partitioning:** Divides overall requirements into discrete chunks based on rulebook constraints (`chunk_manager/chunk_partitioner.py`).
 
-*   **Optimized Collection Forming:** Uses a greedy algorithm for initial chunk allocation followed by Simulated Annealing to optimize the arrangement of chunks into collections, aiming to match target size distributions ([`chunk_manager/dataset_handler.py`](c:\Code\individual-project-olalha\chunk_manager\dataset_handler.py)).
+*   **Optimized Collection Forming:** Uses a greedy algorithm for initial chunk allocation followed by Simulated Annealing to optimize the arrangement of chunks into collections, aiming to match target size distributions (`chunk_manager/dataset_handler.py`).
 
-*   **LLM Integration:** Generates text using LLM APIs (currently OpenAI via [`generation_manager/api_handler.py`](c:\Code\individual-project-olalha\generation_manager\api_handler.py)).
+*   **LLM Integration:** Generates text using LLM APIs (currently OpenAI via `generation_manager/api_handler.py`).
 
-*   **Flexible Prompting:** Utilizes Jinja2 for templating LLM prompts, allowing easy modification of generation instructions ([`generation_manager/prompt_builder.py`](c:\Code\individual-project-olalha\generation_manager\prompt_builder.py), `generation_manager/prompts/`). Supports different prompt strategies (e.g., generate chunks then merge, generate full collection).
+*   **Flexible Prompting:** Utilizes Jinja2 for templating LLM prompts, allowing easy modification of generation instructions (`generation_manager/prompt_builder.py`, `generation_manager/prompts/`). Supports different prompt strategies (e.g., generate chunks then merge, generate full collection).
 
-*   **Parallel API Calls:** Efficiently generates text by making parallel requests to the LLM API ([`generation_manager/api_handler.py`](c:\Code\individual-project-olalha\generation_manager\api_handler.py)).
+*   **Parallel API Calls:** Efficiently generates text by making parallel requests to the LLM API (`generation_manager/api_handler.py`).
 
-*   **Dataset Analysis & Visualization:** Includes tools to analyze the generated dataset's characteristics (distributions, counts) and visualize them ([`analysis_manager/`](c:\Code\individual-project-olalha\analysis_manager\)).
+*   **Dataset Analysis & Visualization:** Includes tools to analyze the generated dataset's characteristics (distributions, counts) and visualize them (`analysis_manager/`).
 
-*   **Interactive GUI:** A Streamlit application ([`app.py`](c:\Code\individual-project-olalha\app.py), [`views/`](c:\Code\individual-project-olalha\views\)) allows users to upload rulebooks, generate dataset structures, trigger text generation, view results, and manage files.
+*   **Interactive GUI:** A Streamlit application (`app.py`, `views/`) allows users to upload rulebooks, generate dataset structures, trigger text generation, view results, and manage files.
 
 ## Pipeline Overview
 
 1.  **Input Manager (`input_manager/`):**
-    *   Parses rulebooks from Excel files, validating their structure and values ([`input_manager/rulebook_parser.py`](c:\Code\individual-project-olalha\input_manager\rulebook_parser.py)).
-    *   Can also generate rulebooks programmatically for testing purposes ([`input_manager/rulebook_generator.py`](c:\Code\individual-project-olalha\input_manager\rulebook_generator.py)).
+    *   Parses rulebooks from Excel files, validating their structure and values (`input_manager/rulebook_parser.py`).
+    *   Can also generate rulebooks programmatically for testing purposes (`input_manager/rulebook_generator.py`).
     *   Saves validated rulebooks as JSON files.
 
 2.  **Chunk Manager (`chunk_manager/`):**
     *   Takes a validated rulebook as input.
-    *   Partitions the total requirements defined in the rulebook into individual chunks (topic, sentiment, word count) ([`chunk_manager/chunk_partitioner.py`](c:\Code\individual-project-olalha\chunk_manager\chunk_partitioner.py)).
+    *   Partitions the total requirements defined in the rulebook into individual chunks (topic, sentiment, word count) (`chunk_manager/chunk_partitioner.py`).
     *   Forms the `Dataset Structure`: Allocates these chunks into collections using a greedy algorithm for an initial solution.
-    *   Optimizes the chunk allocation using Simulated Annealing to better match the target collection size distributions specified in the rulebook ([`chunk_manager/dataset_handler.py`](c:\Code\individual-project-olalha\chunk_manager\dataset_handler.py)).
+    *   Optimizes the chunk allocation using Simulated Annealing to better match the target collection size distributions (`chunk_manager/dataset_handler.py`).
     *   Outputs the dataset structure (collections with chunk definitions) as a JSON file.
 
 3.  **Generation Manager (`generation_manager/`):**
     *   Takes the dataset structure and prompt templates as input.
-    *   Renders specific prompts for the LLM using Jinja2 templates based on chunk details or collection requirements ([`generation_manager/prompt_builder.py`](c:\Code\individual-project-olalha\generation_manager\prompt_builder.py), `generation_manager/prompts/`).
-    *   Manages interaction with the configured LLM API (e.g., OpenAI), handling requests, responses, rate limits, and retries ([`generation_manager/api_handler.py`](c:\Code\individual-project-olalha\generation_manager\api_handler.py)). Supports parallel API calls for efficiency.
+    *   Renders specific prompts for the LLM using Jinja2 templates based on chunk details or collection requirements (`generation_manager/prompt_builder.py`, `generation_manager/prompts/`).
+    *   Manages interaction with the configured LLM API (e.g., OpenAI), handling requests, responses, rate limits, and retries (`generation_manager/api_handler.py`). Supports parallel API calls for efficiency.
     *   Implements different generation strategies:
-        *   Multi-prompt: Generate text for each chunk individually, then merge chunks into a collection ([`generation_manager/text_generator.py`](c:\Code\individual-project-olalha\generation_manager\text_generator.py) - `generate_collection_texts_multi_prompt`). Uses `usr_chunk_gen.html` and `usr_merge_gen.html` prompts.
-        *   Single-prompt: Generate the entire collection text in one go based on chunk requirements ([`generation_manager/text_generator.py`](c:\Code\individual-project-olalha\generation_manager\text_generator.py) - `generate_collection_texts_single_prompt`). Uses `usr_collection_gen.html` prompt.
+        *   Multi-prompt: Generate text for each chunk individually, then merge chunks into a collection (`generation_manager/text_generator.py` - `generate_collection_texts_multi_prompt`). Uses `usr_chunk_gen.html` and `usr_merge_gen.html` prompts.
+        *   Single-prompt: Generate the entire collection text in one go based on chunk requirements (`generation_manager/text_generator.py` - `generate_collection_texts_single_prompt`). Uses `usr_collection_gen.html` prompt.
     *   Updates the dataset structure JSON file with the generated text.
 
 4.  **Analysis Manager (`analysis_manager/`):**
-    *   Provides functions to calculate metrics and statistics about the generated dataset (e.g., word counts, topic/sentiment distributions) ([`analysis_manager/dataset_analyser.py`](c:\Code\individual-project-olalha\analysis_manager\dataset_analyser.py)).
-    *   Offers functions to create plots and visualizations (e.g., distribution plots, pie charts) of the dataset characteristics ([`analysis_manager/dataset_visualizer.py`](c:\Code\individual-project-olalha\analysis_manager\dataset_visualizer.py)).
+    *   Provides functions to calculate metrics and statistics about the generated dataset (e.g., word counts, topic/sentiment distributions) (`analysis_manager/dataset_analyser.py`).
+    *   Offers functions to create plots and visualizations (e.g., distribution plots, pie charts) of the dataset characteristics (`analysis_manager/dataset_visualizer.py`).
 
 5.  **Views (`views/`, `view_components/`):**
-    *   Provides the Streamlit-based user interface ([`app.py`](c:\Code\individual-project-olalha\app.py)).
-    *   Allows users to upload/manage rulebooks and datasets ([`view_components/file_loader.py`](c:\Code\individual-project-olalha\view_components\file_loader.py), [`view_components/item_selector.py`](c:\Code\individual-project-olalha\view_components\item_selector.py)).
+    *   Provides the Streamlit-based user interface (`app.py`).
+    *   Allows users to upload/manage rulebooks and datasets (`view_components/file_loader.py`, `view_components/item_selector.py`).
     *   Triggers the dataset structure generation and text generation processes.
-    *   Displays rulebook details, dataset metrics, visualizations, and generated text ([`views/rulebook_page.py`](c:\Code\individual-project-olalha\views\rulebook_page.py), [`views/dataset_page.py`](c:\Code\individual-project-olalha\views\dataset_page.py)).
+    *   Displays rulebook details, dataset metrics, visualizations, and generated text (`views/rulebook_page.py`, `views/dataset_page.py`).
 
 ## Project Structure
 
@@ -105,6 +105,7 @@ Watching this video can provide a quick overview before setting up and running t
 ├── .env                  # Environment variables (API keys - user-created)
 ├── .gitignore            # Git ignore rules
 ├── app.py                # Main Streamlit application entry point
+├── DISSERTATION-REPORT   # The relevant report prepared alongside this project
 ├── FINAL-DEMO.mp4        # A short video illustrating the functionality
 ├── pytest.ini            # Pytest configuration
 ├── README.md             # This file
@@ -116,7 +117,7 @@ Watching this video can provide a quick overview before setting up and running t
 1.  **Clone the repository:**
     ```bash
     git clone <repository_url>
-    cd individual-project-olalha
+    cd <repository>
     ```
 2.  **Create and activate a Python virtual environment:**
     *   On macOS/Linux:
@@ -134,7 +135,7 @@ Watching this video can provide a quick overview before setting up and running t
     pip install -r requirements.txt
     ```
 4.  **Create Environment File:**
-    *   Create a file named `.env` in the project root directory (`c:\Code\individual-project-olalha`).
+    *   Create a file named `.env` in the project root directory.
 5.  **Configure API Key:**
     *   Add your OpenAI API key to the `.env` file. The file content should look like this:
         ```
@@ -145,14 +146,14 @@ Watching this video can provide a quick overview before setting up and running t
 ## Configuration
 
 *   Operational parameters like file paths, OpenAI API settings (retries, timeouts, rate limits), model names (e.g., `GPT4o`, `GPT4o-mini`), Excel parsing mappings, and algorithm parameters (Simulated Annealing, Greedy) can be adjusted in `_config/settings.yaml`.
-*   The logic for loading and accessing these settings is handled by [`utils/settings_manager.py`](c:\Code\individual-project-olalha\utils\settings_manager.py).
+*   The logic for loading and accessing these settings is handled by `utils/settings_manager.py`.
 *   The **OpenAI API key is mandatory** and must be set in the `.env` file in the project root directory as described in the Setup section.
-*   If you need to change the required environment variables (e.g., add or remove API keys), the checks and loading logic in [`app.py`](c:\Code\individual-project-olalha\app.py) must be modified accordingly.
+*   If you need to change the required environment variables (e.g., add or remove API keys), the checks and loading logic in `app.py` must be modified accordingly.
 
 ## Running the Application
 
 1.  Ensure your virtual environment is activated.
-2.  Navigate to the project root directory (`c:\Code\individual-project-olalha`).
+2.  Navigate to the project root directory.
 3.  Run the Streamlit application:
     ```bash
     streamlit run app.py
