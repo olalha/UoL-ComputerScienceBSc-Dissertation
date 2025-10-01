@@ -1,5 +1,10 @@
 # Rule-Based Synthetic Text Dataset Generator
 
+## Dissertation and Report
+
+This project was created as a final year individual project at the University of Leeds.
+The associated report that written along side this project is availible as a pdf in the root of this repository.
+
 ## Introduction
 
 This project provides a framework for generating synthetic text datasets, specifically designed to resemble user reviews or similar content, based on detailed, user-defined rules. The primary goal is to create datasets with precisely controlled characteristics for applications like Natural Language Processing (NLP) model training and evaluation.
