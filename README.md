@@ -3,7 +3,7 @@
 ## Dissertation and Report
 
 This project was created as a final year individual project at the University of Leeds.
-The associated report that written along side this project is availible as a pdf in the root of this repository.
+The associated report that was written along side this project is availible as a pdf in the root of this repository.
 
 ## Introduction
 
